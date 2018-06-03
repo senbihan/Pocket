@@ -16,7 +16,7 @@ class msgCode:
     SENDDAT = '0009'
     SENDTERM = '0010'
     delim = '|#|'
-
+    endmark = '||<@@>||'
 
 def get_creq_msg(clientid, filename, conn = None):
     ''' create creq msg '''
@@ -24,7 +24,7 @@ def get_creq_msg(clientid, filename, conn = None):
     if conn is None:
         conn = open_db()
     data = get_data(conn,filename,"TIMESTAMP")
-    msg = msgCode.CREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
+    msg = msgCode.CREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     #print "creq msg", msg
     return msg
 
@@ -35,7 +35,7 @@ def get_sensig_msg(clientid, filename, conn = None):
         conn = open_db()
     sig = sync.signature(file(filename,"rb+"))
     data = sig.read()
-    msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
+    msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     #print "sendsig msg", msg
     return msg
 
@@ -48,7 +48,7 @@ def get_senddel_msg(clientid, filename, signature, conn = None):
         conn = open_db()
     delta = sync.delta(file(filename),signature)
     data = delta.read()
-    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
+    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     #print "senddel msg", msg
     return msg 
 
@@ -56,7 +56,7 @@ def get_reqdel_msg(clientid, filename, conn = None):
 
     if conn is None:
         conn = open_db()
-    msg = msgCode.REQDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0'
+    msg = msgCode.REQDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0' + msgCode.endmark
     return msg
 
 
@@ -64,7 +64,7 @@ def get_reqtot_msg(clientid, filename, conn = None):
 
     if conn is None:
         conn = open_db()
-    msg = msgCode.REQTOT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0'
+    msg = msgCode.REQTOT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0' + msgCode.endmark
     return msg
 
 def get_senddat_header(clientid, filename, conn = None):
@@ -72,14 +72,14 @@ def get_senddat_header(clientid, filename, conn = None):
     if conn is None:
         conn = open_db()
     
-    header = msgCode.SENDDAT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim
+    header = msgCode.SENDDAT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim 
     return header
 
+def get_sendsmt_msg(clientid, filename, conn = None):
 
-def get_terminate_ft_msg(clientid, filename, conn = None):
-    
     if conn is None:
         conn = open_db()
     
-    header = msgCode.SENDTERM + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim
-    return header
+    data = get_data(conn,filename,"server_m_time")
+    msg = msgCode.SENDSMT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg

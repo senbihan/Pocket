@@ -7,13 +7,15 @@ import os
 import logging
 import time
 
-BUFFER_SIZE =  200
+BUFFER_SIZE =  1024
+DATA_SOCK_PORT  =  54321
 locked = {}
+recieve_file_flag = False
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 def service_message(msg, client, db_conn):
     
-    msg_code, client_id, file_name, data = msg.split('|#|')
+    msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
     print msg_code, client_id, file_name, data
     if msg_code == pm.msgCode.CREQ:
         # request to connection and sync
@@ -21,40 +23,55 @@ def service_message(msg, client, db_conn):
             pass
         else :
             # send a request to send the total file
+            sm_time, cm_time = data.split('<##>')
+            pm.update_db(db_conn,file_name,"client_m_time",cm_time)
+            db_conn.commit()
             ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
-            logging.info("ret msg: %s",ret_msg)
+            logging.info("returing msg for requesting data: %s",ret_msg)
             client.send(ret_msg)
             time.sleep(5)  
     
     if msg_code == pm.msgCode.SENDDAT:
-        # blocking (high priority)
-        if locked.has_key(file_name):
-            print "val", locked[file_name]
-            if locked[file_name] != client_id:
-                time.sleep(50)
-            else:
-                logging.debug("waiting for file: %s",file_name)
-                with open(file_name, 'ab') as f:
-                    f.write(data)
-                print "closing...file"
-                f.close()
-                #msg = pm.get_terminate_ft_msg(client_id,file_name,db_conn)
-                #logging.debug("sending terminate msg: %s", msg)
-                #client.send(msg)
-                logging.debug("file receievd: %s", file_name)
-                locked[file_name] = 0
-        else:
-            logging.debug("updating locked info of %s",file_name)
-            locked[file_name] = client_id
         
+        #create a new socket and send the data via it
+        data_socket = socket.socket()
+        addr = ('', DATA_SOCK_PORT)
+        data_socket.bind(addr)
+        print "Data socket is ready at: {}".format(data_socket.getsockname())
+        data_socket.listen(1)
+        client_data_sock, addr = data_socket.accept()
+        with open(file_name, 'wb') as f:
+            while True:
+                data = client_data_sock.recv(1000)
+                if not data:
+                    break
+                f.write(data)
+            f.close()
+        logging.info("file recieved: %s",file_name)
+        data_socket.close()
+
+        #update server_m_time
+        ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
+        db_conn.commit()
+        #send server_m_time to client for update
+        ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
+        logging.info("returing msg for requesting data: %s",ret_msg)
+        client.send(ret_msg)
+        time.sleep(5)  
+    
+
 
 def handle_request(client, addr, db_conn):
     while True:
-        msg = client.recv(BUFFER_SIZE)
-        if msg == "":
+        msgList = client.recv(BUFFER_SIZE)
+        if msgList == "":
             continue
-        logging.info("recieved msg: %s",msg)
-        service_message(msg, client, db_conn)
+        logging.debug("msglist : %s",msgList)
+        for msg in msgList.split(pm.msgCode.endmark):
+            if msg == "":
+                continue            
+            logging.info("recieved msg: %s",msg)
+            service_message(msg, client, db_conn)
         
     client.close()
 
@@ -75,12 +92,13 @@ def _main():
     threads = []
     while True:
         client, addr = server.accept()
-        logging.info("getting connection from % s",addr)
+        logging.info("getting connection from %s",addr)
         t = Thread(handle_request(client,addr,db_conn))
+        threads.append(t)
         t.start()
         time.sleep(10)
-        threads.append(t)
         
+
     server.close()
 
 
