@@ -13,6 +13,8 @@ class msgCode:
     SENDSMT = '0006'
     SENDNOC = '0007'
     REQTOT  = '0008'
+    SENDDAT = '0009'
+    SENDTERM = '0010'
     delim = '|#|'
 
 
@@ -23,7 +25,7 @@ def get_creq_msg(clientid, filename, conn = None):
         conn = open_db()
     data = get_data(conn,filename,"TIMESTAMP")
     msg = msgCode.CREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
-    print "creq msg", msg
+    #print "creq msg", msg
     return msg
 
 def get_sensig_msg(clientid, filename, conn = None):
@@ -34,7 +36,7 @@ def get_sensig_msg(clientid, filename, conn = None):
     sig = sync.signature(file(filename,"rb+"))
     data = sig.read()
     msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
-    print "sendsig msg", msg
+    #print "sendsig msg", msg
     return msg
 
 def get_senddel_msg(clientid, filename, signature, conn = None):
@@ -47,7 +49,7 @@ def get_senddel_msg(clientid, filename, signature, conn = None):
     delta = sync.delta(file(filename),signature)
     data = delta.read()
     msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data
-    print "senddel msg", msg
+    #print "senddel msg", msg
     return msg 
 
 def get_reqdel_msg(clientid, filename, conn = None):
@@ -64,3 +66,20 @@ def get_reqtot_msg(clientid, filename, conn = None):
         conn = open_db()
     msg = msgCode.REQTOT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0'
     return msg
+
+def get_senddat_header(clientid, filename, conn = None):
+    
+    if conn is None:
+        conn = open_db()
+    
+    header = msgCode.SENDDAT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim
+    return header
+
+
+def get_terminate_ft_msg(clientid, filename, conn = None):
+    
+    if conn is None:
+        conn = open_db()
+    
+    header = msgCode.SENDTERM + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim
+    return header

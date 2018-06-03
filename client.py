@@ -5,16 +5,40 @@ import getpass
 import inotify.adapters
 import time
 import pocketmsg as pm
+import logging
+import traceback
 
+BUFFER_SIZE     =   200
 SERVER_IP       =   ''
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
 usage : python client.py [path to the directory]
 '''
+client_id = ''
+logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
-def handle_server_request(msg):
+
+def service_message(msg, client_socket, db_conn):
+
+    if db_conn is None:
+        db_conn = pm.open_db()
 
     msg_code, client_id, file_name, data = msg.split('|#|')
+
+    if msg_code == pm.msgCode.REQTOT:
+        header = pm.get_senddat_header(client_id,file_name, db_conn)
+        logging.info("sending : header = %s", header)
+        client_socket.send(header)
+        logging.debug("opening file : %s",file_name)
+        f = open(file_name, 'rb')
+        l = f.read(BUFFER_SIZE)
+        while l:
+            client_socket.send(header + str(l))
+            l = f.read(BUFFER_SIZE)
+        f.close()
+        logging.debug("file sent: %s", file_name)
+        time.sleep(10)
+
 
 def _main():
     
@@ -44,10 +68,10 @@ def _main():
                 if filename == "config.db":
                     continue
                 fname = dirpath + '/' + filename
-                print "updating client_m_time of " , fname
+                logging.info("updating client_m_time of %s" , fname)
                 ret = pm.update_db(db_conn,fname,"client_m_time",os.path.getmtime(fname))
                 db_conn.commit()
-                print "updating: " , ret
+                logging.info("updating: %s" , ret)
                 if ret == 1:
                     file_name_list.append(fname)
                 #pm.show_data(db_conn)
@@ -55,25 +79,28 @@ def _main():
         
 
         for file_name in file_name_list:
-            print "sending for ", file_name
             msg = pm.get_creq_msg(client_id,file_name,db_conn)
-            print "msg is ", msg
-            client_socket.sendall(msg)
+            client_socket.send(msg)
+            time.sleep(5)
         
         while True:
-            msg = client_socket.recv(200)
-            if msg == "":
+            msg = client_socket.recv(BUFFER_SIZE)
+            if msg is "":
                 continue
-            handle_server_request(msg)
+            logging.debug("msg from server : %s",msg)
+            service_message(msg,client_socket,db_conn)
             # add notifier to watch
             #notifier = inotify.adapters.InotifyTree(directory)
             #events = list(i.event_gen(yield_nones=False, timeout_s=1))
             #print(events)
 
-    except:
-        print "EXCEPT BLOCK"
+    except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print(exc_type, fname, exc_tb.tb_lineno)
+        traceback.print_exc()
     #finally:
-        #client_socket.sendall("END")
+        #client_socket.send("END")
         #client_socket.close()
 
 

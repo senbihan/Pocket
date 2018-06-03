@@ -20,7 +20,8 @@ REQDEL  :   0004   : data : \0
 REQSMT  :   0005   : data : \0
 SENDSMT :   0006   : data : server.server_m_time
 SENDNOC :   0007   : data : \0
-REQTOT :   0008   : data : \0
+REQTOT :    0008   : data : \0
+SENDDATA:   0009   : data : filedata
 
 
 Sync-ing Algorithm
