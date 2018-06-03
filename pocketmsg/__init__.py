@@ -1,20 +1,23 @@
 import os
 import librsync as sync
 from dboperations import *
+import tempfile
 
 MAX_FILE_LEN = 50
+MAX_SPOOL = 1024 ** 2 * 5
 
 class msgCode:
     CREQ    = '0001'
     SENDSIG = '0002'
     SENDDEL = '0003'
-    REQDEL  = '0004'
+    REQSIG  = '0004'
     REQSMT  = '0005'
     SENDSMT = '0006'
     SENDNOC = '0007'
     REQTOT  = '0008'
     SENDDAT = '0009'
-    SENDTERM = '0010'
+    SERVSYNC = '0010'
+
     delim = '|#|'
     endmark = '||<@@>||'
 
@@ -33,26 +36,30 @@ def get_sensig_msg(clientid, filename, conn = None):
 
     if conn is None:
         conn = open_db()
-    sig = sync.signature(file(filename,"rb+"))
+    sig = sync.signature(open(filename,"rb+"))
     data = sig.read()
-    msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + str(data) + msgCode.endmark
     #print "sendsig msg", msg
     return msg
 
-def get_senddel_msg(clientid, filename, signature, conn = None):
+def get_senddel_msg(clientid, filename, data, conn = None):
     ''' create senddel msg 
         filename : source filename
     '''
     
     if conn is None:
         conn = open_db()
-    delta = sync.delta(file(filename),signature)
-    data = delta.read()
-    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    signature = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+    signature.write(data)
+    signature.seek(0)
+    src = open(filename, 'rb')
+    delta = sync.delta(src,signature)
+    sdata = delta.read()
+    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + str(sdata) + msgCode.endmark
     #print "senddel msg", msg
     return msg 
 
-def get_reqdel_msg(clientid, filename, conn = None):
+def get_reqsig_msg(clientid, filename, conn = None):
 
     if conn is None:
         conn = open_db()
@@ -82,4 +89,12 @@ def get_sendsmt_msg(clientid, filename, conn = None):
     
     data = get_data(conn,filename,"server_m_time")
     msg = msgCode.SENDSMT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+def get_servsync_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    data = '\0'
+    msg = msgCode.SERVSYNC + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     return msg

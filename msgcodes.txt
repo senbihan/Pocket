@@ -16,12 +16,13 @@ timestamp = (server_m_time, client_m_time)
 CREQ    :   0001   : data : timestamp   , both times are separated by #
 SENDSIG :   0002   : data : signature
 SENDDEL :   0003   : data : delta
-REQDEL  :   0004   : data : \0
+REQSIG  :   0004   : data : \0
 REQSMT  :   0005   : data : \0
 SENDSMT :   0006   : data : server.server_m_time
 SENDNOC :   0007   : data : \0
 REQTOT :    0008   : data : \0
 SENDDATA:   0009   : data : filedata
+SERVSYNC:   0010   : data : \0
 
 
 
@@ -33,8 +34,7 @@ C : update client.client_m_time from stat
 C : client sends CREQ packet to server
 
 S : if not present request to send the total file
-        send
-
+        client sends the total file to server
     else
     if server.server_m_time == client.server_m_time // sent by client, client is synced with server but has new upates, need to be synced
         if server.client_m_time == client.client_m_time                 (1)
@@ -47,6 +47,7 @@ S : if not present request to send the total file
                 2. compute delta and send to server (client)        SENDDEL
                 3. patch to the dest file           (server)
                    update server.client_m_time 
+                   update server.server_m_time
             else    // only when parallel multiple access
                 CONFLICT
             
@@ -65,7 +66,7 @@ S : if not present request to send the total file
                 5. update client.server_m_time      (client)
             else                                            // present client has old data
                 [dest = client, src = server]
-                1. REQ client to send a signature  (server)         REQDEL
+                1. REQ client to send a signature  (server)         REQSIG
                 2. send a signature to server      (client)         SENDSIG
                 3. compute delta and send to client(server)         SENDDEL
                 4. patch to the dest file          (client)
@@ -73,3 +74,5 @@ S : if not present request to send the total file
                 5. request server to send server.server_m_time      REQSMT
                 6. send server.server_m_time       (server)         SENDSMT
                 7. update client.server_m_time     (client)
+
+    inotify on server

@@ -78,13 +78,27 @@ def get_data(conn, fileid, comm):
     fid = (fileid,)
     cur = conn.execute("select * from trans where file_id=?",fid)
     data = cur.fetchall()
-    print data
+    #print "data from dbms", data
     if comm is 'CLIENT_M_TIME' or comm is 'client_m_time':
-        return str(data[0][2])
+        if str(data[0][2]) == 'NULL':
+            return "NULL"
+        s = "%.7f" %float(data[0][2])
+        return s
     if comm is 'SERVER_M_TIME' or comm is 'server_m_time':
-        return str(data[0][1])
+        if str(data[0][2]) == 'NULL':
+            return "NULL"
+        s = "%.7f" %float(data[0][1])
+        return s
     if comm is 'TIMESTAMP' or comm is 'timestamp':
-        return str(data[0][1]) + '<##>' + str(data[0][2])
+        if str(data[0][1]) == 'NULL':
+            s = "NULL"
+        else:
+            s = "%.7f" %float(data[0][1])
+        if str(data[0][2]) == 'NULL':
+            t = "NULL"
+        else:
+            t = "%.7f" %float(data[0][2]) 
+        return s + '<##>' + t
 
 def show_data(conn):
     cur = conn.execute("select * from trans;")

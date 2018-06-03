@@ -6,9 +6,13 @@ import pocketmsg as pm
 import os
 import logging
 import time
+import librsync as sync
+import tempfile
 
+
+MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
-DATA_SOCK_PORT  =  54321
+DATA_SOCK_PORT  =  54322
 locked = {}
 recieve_file_flag = False
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
@@ -20,7 +24,30 @@ def service_message(msg, client, db_conn):
     if msg_code == pm.msgCode.CREQ:
         # request to connection and sync
         if os.path.exists(file_name) is True:
-            pass
+            
+            c_server_m_time, c_client_m_time = data.split('<##>')
+            s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
+            s_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
+
+            print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
+            print "client: server_m_time ", c_server_m_time, "server_m_time ", c_client_m_time
+            if s_server_m_time == c_server_m_time:
+                if s_client_m_time == c_client_m_time:
+                    return
+                else:
+                    if c_client_m_time > s_client_m_time:
+                        # SENDSIG Sig
+                        msg = pm.get_sensig_msg(client_id,file_name,db_conn)
+                        logging.info("sending signature of file : %s",file_name)
+                        pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
+                        db_conn.commit()
+                        client.send(msg)
+                    else:
+                        # CONFLICT
+                        return
+            else:
+                # to be implemented
+                return
         else :
             # send a request to send the total file
             sm_time, cm_time = data.split('<##>')
@@ -30,6 +57,25 @@ def service_message(msg, client, db_conn):
             logging.info("returing msg for requesting data: %s",ret_msg)
             client.send(ret_msg)
             time.sleep(5)  
+
+    if msg_code == pm.msgCode.SENDDEL:
+        # received delta
+        delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+        delta.write(data)
+        delta.seek(0)
+        dest = open(file_name,'rb')
+        synced_file = open(file_name,'wb')
+        sync.patch(dest,delta,synced_file)
+        print "Updation Successful"
+
+        print "SERVER M TIME : ", os.path.getmtime(file_name)
+        pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
+        db_conn.commit()
+        #send server_m_time to client for update
+        ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
+        logging.info("returning msg for updating SMT: %s",ret_msg)
+        client.send(ret_msg)
+        
     
     if msg_code == pm.msgCode.SENDDAT:
         
@@ -51,14 +97,17 @@ def service_message(msg, client, db_conn):
         data_socket.close()
 
         #update server_m_time
+        print "SERVER M TIME : ", os.path.getmtime(file_name)
         ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
-        logging.info("returing msg for requesting data: %s",ret_msg)
+        logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
         time.sleep(5)  
     
+    if msg_code == pm.msgCode.SERVSYNC:
+        return
 
 
 def handle_request(client, addr, db_conn):
@@ -78,17 +127,17 @@ def handle_request(client, addr, db_conn):
 def _main():
     # create a server socket
     if len(sys.argv) != 2:
-        print "usage: python server.py [dirname]"
+        print "usage: python server.py [dirname]"    
+    os.chdir(sys.argv[1])
     server = socket.socket()
     addr = ('', 0)
     server.bind(addr)
     print "Pocket Server Started at : {}".format(server.getsockname())
     server.listen(5)
-
-    os.chdir(sys.argv[1])
     db_conn = pm.open_db()
     pm.create_table(db_conn)
 
+    # CLIENT SYNC (both for Online and Newly connected Client)
     threads = []
     while True:
         client, addr = server.accept()
