@@ -31,7 +31,10 @@ def service_message(msg, client, db_conn):
 
             print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
             print "client: server_m_time ", c_server_m_time, "server_m_time ", c_client_m_time
+            
+            #Case 1
             if s_server_m_time == c_server_m_time:
+            
                 if s_client_m_time == c_client_m_time:
                     return
                 else:
@@ -45,9 +48,19 @@ def service_message(msg, client, db_conn):
                     else:
                         # CONFLICT
                         return
-            else:
-                # to be implemented
-                return
+            else:                               #The requesting client is not synced with server
+                if c_client_m_time > s_client_m_time:
+                    # SENDSIG Sig
+                    msg = pm.get_sensig_msg(client_id,file_name,db_conn)
+                    logging.info("sending signature of file : %s",file_name)
+                    pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
+                    db_conn.commit()
+                    client.send(msg)
+                elif c_client_m_time < s_client_m_time:
+                    #REQDEL msg
+                    msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
+                    client.send(msg)
+                
         else :
             # send a request to send the total file
             sm_time, cm_time = data.split('<##>')
@@ -65,10 +78,11 @@ def service_message(msg, client, db_conn):
         delta.seek(0)
         dest = open(file_name,'rb')
         synced_file = open(file_name,'wb')
-        sync.patch(dest,delta,synced_file)
+        sync.patch(dest,delta,synced_file)      # patch the delta
+        synced_file.close()
         print "Updation Successful"
 
-        print "SERVER M TIME : ", os.path.getmtime(file_name)
+        #print "SERVER M TIME : ", os.path.getmtime(file_name)
         pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update

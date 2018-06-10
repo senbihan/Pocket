@@ -35,6 +35,7 @@ def insert_db(conn, data):
 def update_db(conn, fileid, key, val):
     '''update field by fileid '''
 
+    val = float(val)
     data = (val,fileid)
     if key is "client_m_time":
         ldata = (fileid,"NULL",val)

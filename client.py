@@ -62,12 +62,11 @@ def service_message(msg, client_socket, db_conn):
 
     if msg_code == pm.msgCode.SENDSIG:
         #compute delta and send
-        print "sig data : ", data
         msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
-        print "senddel msg: ", msg
         client_socket.send(msg)
 
         return 1
+
 
 
 
