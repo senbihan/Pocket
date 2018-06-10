@@ -19,27 +19,23 @@ pocket is small dropbox-like client that keeps your files synced. This is a coll
 
 To Run, Test you need these :
 
-1. `librsync` : 
+1. librsync :
+     >For Debian/Ubuntu<br/>
 
-        For Debian/Ubuntu 
-            run `sudo apt-get install librsync-dev`. (for librsync library)
+      1. run `sudo apt-get install librsync-dev`. (for librsync library)      
+      2. run `sudo pip install python-librsync`.  (for python wrapper)
 
-            run `sudo pip install python-librsync`.  (for python wrapper)
-
-2. `inotify`  :
-
-        For Debian/Ubuntu
-            run `sudo apt-get inotify-tools`.   (for inotify library)
-
-            run `sudo pip install inotify`  .   (for python wrapper)
+2. inotify  :
+      >For Debian/Ubuntu
+      
+      1. run `sudo apt-get inotify-tools`.   (for inotify library)      
+      2. run `sudo pip install inotify`  .   (for python wrapper)
 
 Otherwise, you can install librsync and inotify library and then            
 run `$sudo python setup.py install` to install the python wrappers.
 
 **Credits**
 
-Credits for the open-source library used in this project:
-https://github.com/dsoprea/PyInotify    (pynotify)
-
+Credits for the open-source library used in this project:<br/>
+https://github.com/dsoprea/PyInotify    (pynotify)<br/>
 https://github.com/smartfile/python-librsync    (librsync)
-        
