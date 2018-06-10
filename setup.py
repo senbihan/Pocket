@@ -10,5 +10,5 @@ setup(name="Pocket FileSync Server",
 	author="Bihan Sen, Shayak Chakraborty",
 	author_email="senbihan@gmail.com, shayak.asansol@gmail.com",
 	install_requires=[
-		'inotify','librsync']
+		'inotify','python-librsync']
 )

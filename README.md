@@ -1,24 +1,40 @@
-# pocket : A simple file server-client application 
+# pocket : A simple file synchronisation server-client application 
 
 **Introduction**:
 
 pocket is small dropbox-like client that keeps your files synced. This is a collaborative class project of Operating Subject Indian Statistical Institute, Kolkata for M.Tech CS Batch 2017-19.
 
 ****
-# Change Log:
+**Current Features**
 
-**Latest addition**:
-1. 29/04/2018:  Initial Commit - Simple client server message - acknowledgement
-2. 13/05/2018:  DBops updated.
+1. Upload files from local machine to server that are not present.
+2. Synchronise existing files with the server.
 
-**Next to be added:**
-1. Notifier (`inotify`) to watch over changes in local directories
-2. Synchronization with the server
-3. Handling multiple clients
-4. Synchronization between multiple alive sessions of a single Client
+**Features to be Added**
 
+1. Single user multi-client support
+2. Multiple user support.
 
 **Dependency:**
-1. This project requires `inotify`.
 
-   run `$sudo python setup.py install` from terminal to install the dependencies.
+To Run, Test you need these :
+
+1. `librsync` : 
+        For Debian/Ubuntu 
+            run `sudo apt-get install librsync-dev`. (for librsync library)
+            run `sudo pip install python-librsync`.  (for python wrapper)
+
+2. `inotify`  :  
+        For Debian/Ubuntu
+            run `sudo apt-get inotify-tools`.   (for inotify library)
+            run `sudo pip install inotify`  .   (for python wrapper)
+
+Otherwise, you can install librsync and inotify library and then            
+run `$sudo python setup.py install` from terminal to install the python wrappers.
+
+**Credits**
+
+Credits for the open-source library used in this project:
+https://github.com/dsoprea/PyInotify
+https://github.com/smartfile/python-librsync/
+        
