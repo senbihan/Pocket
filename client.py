@@ -63,8 +63,8 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.SENDSIG:
         #compute delta and send
         msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
+        print "delta: ", msg
         client_socket.send(msg)
-
         return 1
 
 
@@ -137,12 +137,18 @@ def _main():
 
         handle_request(client_socket,db_conn)
 
-
-
+        #while True:
         # add notifier to watch
-        #notifier = inotify.adapters.InotifyTree(directory)
-        #events = list(i.event_gen(yield_nones=False, timeout_s=1))
-        #print(events)
+        #print "Notifyer started..."
+        #notifier = inotify.adapters.InotifyTree('.')
+        #notifier.add_watch('.')
+        #for event in notifier.event_gen():
+        #    if event is not None:
+        #        (_, type_names, path, filename) = event
+        #        if filename is not '' or filename is not 'config.db':
+        #            print filename, type_names
+
+            
 
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()

@@ -36,7 +36,7 @@ def service_message(msg, client, db_conn):
             if s_server_m_time == c_server_m_time:
             
                 if s_client_m_time == c_client_m_time:
-                    return
+                    return 0
                 else:
                     if c_client_m_time > s_client_m_time:
                         # SENDSIG Sig
@@ -45,9 +45,10 @@ def service_message(msg, client, db_conn):
                         pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                         db_conn.commit()
                         client.send(msg)
+                        return 1
                     else:
                         # CONFLICT
-                        return
+                        return 2
             else:                               #The requesting client is not synced with server
                 if c_client_m_time > s_client_m_time:
                     # SENDSIG Sig
@@ -56,11 +57,14 @@ def service_message(msg, client, db_conn):
                     pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                     db_conn.commit()
                     client.send(msg)
+                    return 1
+
                 elif c_client_m_time < s_client_m_time:
                     #REQDEL msg
                     msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
                     client.send(msg)
-                
+                    return 1
+                                
         else :
             # send a request to send the total file
             sm_time, cm_time = data.split('<##>')
@@ -69,7 +73,8 @@ def service_message(msg, client, db_conn):
             ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
             logging.info("returing msg for requesting data: %s",ret_msg)
             client.send(ret_msg)
-            time.sleep(5)  
+            time.sleep(5) 
+            return 1 
 
     if msg_code == pm.msgCode.SENDDEL:
         # received delta
@@ -89,7 +94,7 @@ def service_message(msg, client, db_conn):
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
         logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
-        
+        return 0
     
     if msg_code == pm.msgCode.SENDDAT:
         
@@ -118,14 +123,16 @@ def service_message(msg, client, db_conn):
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
         logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
-        time.sleep(5)  
+        #time.sleep(5)  
+        return 0
     
     if msg_code == pm.msgCode.SERVSYNC:
-        return
+        return 0
 
 
 def handle_request(client, addr, db_conn):
-    while True:
+    ret = 1
+    while ret == 1:
         msgList = client.recv(BUFFER_SIZE)
         if msgList == "":
             continue
@@ -134,8 +141,8 @@ def handle_request(client, addr, db_conn):
             if msg == "":
                 continue            
             logging.info("recieved msg: %s",msg)
-            service_message(msg, client, db_conn)
-        
+            ret = service_message(msg, client, db_conn)
+    
     client.close()
 
 def _main():
@@ -147,7 +154,7 @@ def _main():
     addr = ('', 0)
     server.bind(addr)
     print "Pocket Server Started at : {}".format(server.getsockname())
-    server.listen(5)
+    server.listen(10)
     db_conn = pm.open_db()
     pm.create_table(db_conn)
 
