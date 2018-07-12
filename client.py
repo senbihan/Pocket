@@ -8,7 +8,7 @@ import pocketmsg as pm
 import logging
 import traceback
 from threading import Thread
-import librsync
+import librsync as sync
 import tempfile
 
 
@@ -33,14 +33,14 @@ def service_message(msg, client_socket, db_conn):
 
     if msg_code == pm.msgCode.REQTOT:
         header = pm.get_senddat_header(client_id,file_name, db_conn)
-        logging.info("sending : header = %s", header)
+        #logging.info("sending : header = %s", header)
         client_socket.send(header + pm.msgCode.endmark)
 
-        time.sleep(20)           # wait for server data socket to be ready
+        time.sleep(10)           # wait for server data socket to be ready
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_data_address = (SERVER_IP,DATA_SOCK_PORT)
         client_data_socket.connect(server_data_address)
-        logging.debug("opening file : %s",file_name)
+        #logging.debug("opening file : %s",file_name)
         with open(file_name, 'rb') as f:
             l = f.read(1000)
             while l:
@@ -53,19 +53,53 @@ def service_message(msg, client_socket, db_conn):
         return  1
 
     if msg_code == pm.msgCode.SENDSMT:
-        logging.info("updating server_m_time of %s to %s",file_name,data)
+        #logging.info("updating server_m_time of %s to %s",file_name,data)
         pm.update_db(db_conn,file_name,"server_m_time",data)
         db_conn.commit()
-        pm.show_data(db_conn)
+        #pm.show_data(db_conn)
 
         return 0    #   close connection
 
     if msg_code == pm.msgCode.SENDSIG:
         #compute delta and send
+        logging.info("Sync-ing and uploading %s", file_name)
         msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
-        print "delta: ", msg
+        #print "delta: ", msg
         client_socket.send(msg)
         return 1
+
+    if msg_code == pm.msgCode.REQSIG:
+
+        msg = pm.get_sensig_msg(client_id,file_name,db_conn)
+        client_socket.send(msg)
+        return 1
+    
+
+    if msg_code == pm.msgCode.SENDDEL:
+        # received delta
+        delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+        delta.write(data)
+        delta.seek(0)
+        dest = open(file_name,'rb')
+        synced_file = open(file_name,'wb')
+        sync.patch(dest,delta,synced_file)      # patch the delta
+        synced_file.close()
+        print file_name, "Updation Successful"
+
+        #print "SERVER M TIME : ", os.path.getmtime(file_name)
+        pm.update_db(db_conn,file_name,"client_m_time",os.path.getmtime(file_name))
+        db_conn.commit()
+        #send server_m_time to client for update
+        ret_msg = pm.get_sendcmt_msg(client_id,file_name,db_conn)
+        #logging.info("returning msg for updating SMT: %s",ret_msg)
+        client_socket.send(ret_msg)
+        return 0
+    
+
+    if msg_code == pm.msgCode.CONFLICT:
+        
+        print "The ", file_name , " is being accessed by some other client device! Updation is conflictiing"
+        return 0
 
 
 
@@ -81,16 +115,16 @@ def handle_request(client_socket, db_conn):
         for msg in msglist.split(pm.msgCode.endmark):
             if msg == "":
                 break
-            logging.debug("msg from server : %s",msg)
+            #logging.debug("msg from server : %s",msg)
             ret = service_message(msg,client_socket,db_conn)
 
 def _main():
     
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 5:
         print USAGE_MESG
         exit(0)
 
-    client_id = 'abcd'
+    client_id = sys.argv[4]
     directory = sys.argv[1]
     SERVER_IP = sys.argv[2]
     SERVER_PORT = int(sys.argv[3])
@@ -116,8 +150,8 @@ def _main():
                 ret = pm.update_db(db_conn,fname,"client_m_time",os.path.getmtime(fname))
                 db_conn.commit()
                 #logging.info("updating: %s" , ret)
-                if ret == 1:
-                    file_name_list.append(fname)
+                #if ret == 1:
+                file_name_list.append(fname)
                 #pm.show_data(db_conn)
                 #send creq msg
 
@@ -126,7 +160,7 @@ def _main():
         threads = []
         for file_name in file_name_list:
             msg = pm.get_creq_msg(client_id,file_name,db_conn)
-            logging.info("sending : %s",msg)
+            #logging.info("sending : %s",msg)
             client_socket.send(msg)
             t = Thread(handle_request(client_socket,db_conn))
             t.start()
@@ -135,18 +169,19 @@ def _main():
         for t in threads:
             t.join()
 
-        handle_request(client_socket,db_conn)
+        #handle_request(client_socket,db_conn)
 
-        #while True:
-        # add notifier to watch
-        #print "Notifyer started..."
-        #notifier = inotify.adapters.InotifyTree('.')
-        #notifier.add_watch('.')
-        #for event in notifier.event_gen():
-        #    if event is not None:
-        #        (_, type_names, path, filename) = event
-        #        if filename is not '' or filename is not 'config.db':
-        #            print filename, type_names
+        print "Notifier started..."
+        while True:
+            #add notifier to watch
+            notifier = inotify.adapters.InotifyTree('.')
+            #notifier.add_watch('.')
+            for event in notifier.event_gen():
+                if event is not None:
+                    (_, type_names, path, filename) = event
+                    if filename is '' or filename == 'config.db':
+                        continue
+                    
 
             
 

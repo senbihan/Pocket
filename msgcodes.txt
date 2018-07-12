@@ -23,6 +23,7 @@ SENDNOC :   0007   : data : \0
 REQTOT :    0008   : data : \0
 SENDDATA:   0009   : data : filedata
 SERVSYNC:   0010   : data : \0
+CONFLICT:   0011   : data : \0
 
 
 

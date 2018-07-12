@@ -20,60 +20,81 @@ logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 def service_message(msg, client, db_conn):
     
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
-    print msg_code, client_id, file_name, data
+    #print msg_code, client_id, file_name, data
     if msg_code == pm.msgCode.CREQ:
         # request to connection and sync
         if os.path.exists(file_name) is True:
             
             c_server_m_time, c_client_m_time = data.split('<##>')
-            s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
+            
+            # for test purposes only. server db updation only occurs when some file updated by any client
+            # assuming server is running indefinitely
+            # pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
+            # db_conn.commit()
+            
             s_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
+            s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
 
             print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
-            print "client: server_m_time ", c_server_m_time, "server_m_time ", c_client_m_time
+            print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
             
             #Case 1
             if s_server_m_time == c_server_m_time:
-            
                 if s_client_m_time == c_client_m_time:
+                    # No update
                     return 0
                 else:
                     if c_client_m_time > s_client_m_time:
                         # SENDSIG Sig
+                        logging.info("Requesting Update for file : %s",file_name)
                         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
-                        logging.info("sending signature of file : %s",file_name)
+                        #logging.info("sending signature of file : %s",file_name)
                         pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                         db_conn.commit()
                         client.send(msg)
                         return 1
                     else:
                         # CONFLICT
-                        return 2
+                        msg = pm.get_conflict_msg(client_id,file_name, db_conn)
+                        client.send(msg)
+                        return 0
             else:                               #The requesting client is not synced with server
+                
+                if c_client_m_time == s_client_m_time:
+                    #REQSIG msg
+                    logging.info("Sending Update for file : %s",file_name)
+                    msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
+                    client.send(msg)
+                    return 1
+
                 if c_client_m_time > s_client_m_time:
                     # SENDSIG Sig
+                    logging.info("Requesting Update for file : %s",file_name)
                     msg = pm.get_sensig_msg(client_id,file_name,db_conn)
-                    logging.info("sending signature of file : %s",file_name)
+                    #logging.info("sending signature of file : %s",file_name)
                     pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                     db_conn.commit()
                     client.send(msg)
                     return 1
 
                 elif c_client_m_time < s_client_m_time:
-                    #REQDEL msg
+                    #REQSIG msg
+                    logging.info("Sending Update for file : %s",file_name)
                     msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
                     client.send(msg)
                     return 1
+                
                                 
         else :
             # send a request to send the total file
+            logging.info("Requesting File: %s",file_name)
             sm_time, cm_time = data.split('<##>')
             pm.update_db(db_conn,file_name,"client_m_time",cm_time)
             db_conn.commit()
             ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
-            logging.info("returing msg for requesting data: %s",ret_msg)
+            #logging.info("returing msg for requesting data: %s",ret_msg)
             client.send(ret_msg)
-            time.sleep(5) 
+            #time.sleep(5) 
             return 1 
 
     if msg_code == pm.msgCode.SENDDEL:
@@ -92,7 +113,7 @@ def service_message(msg, client, db_conn):
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
-        logging.info("returning msg for updating SMT: %s",ret_msg)
+        #logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
         return 0
     
@@ -116,15 +137,28 @@ def service_message(msg, client, db_conn):
         data_socket.close()
 
         #update server_m_time
-        print "SERVER M TIME : ", os.path.getmtime(file_name)
+        #print "SERVER M TIME : ", os.path.getmtime(file_name)
         ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
-        logging.info("returning msg for updating SMT: %s",ret_msg)
+        #logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
         #time.sleep(5)  
         return 0
+
+    if msg_code == pm.msgCode.SENDSIG:
+        #compute delta and send
+        #logging.info("Sync-ing and sending %s", file_name)
+        msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
+        #print "delta: ", msg
+        client.send(msg)
+        return 1
+
+    if msg_code == pm.msgCode.SENDCMT:
+        pm.update_db(db_conn,file_name,"client_m_time",data)
+        db_conn.commit()
+        
     
     if msg_code == pm.msgCode.SERVSYNC:
         return 0
@@ -136,11 +170,11 @@ def handle_request(client, addr, db_conn):
         msgList = client.recv(BUFFER_SIZE)
         if msgList == "":
             continue
-        logging.debug("msglist : %s",msgList)
+        #logging.debug("msglist : %s",msgList)
         for msg in msgList.split(pm.msgCode.endmark):
             if msg == "":
                 continue            
-            logging.info("recieved msg: %s",msg)
+            #logging.info("recieved msg: %s",msg)
             ret = service_message(msg, client, db_conn)
     
     client.close()
@@ -168,6 +202,7 @@ def _main():
         t.start()
         time.sleep(10)
         
+
 
     server.close()
 

@@ -17,6 +17,8 @@ class msgCode:
     REQTOT  = '0008'
     SENDDAT = '0009'
     SERVSYNC = '0010'
+    CONFLICT = '0011'
+    SENDCMT = '0012'
 
     delim = '|#|'
     endmark = '||<@@>||'
@@ -63,7 +65,7 @@ def get_reqsig_msg(clientid, filename, conn = None):
 
     if conn is None:
         conn = open_db()
-    msg = msgCode.REQDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0' + msgCode.endmark
+    msg = msgCode.REQSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0' + msgCode.endmark
     return msg
 
 
@@ -90,6 +92,26 @@ def get_sendsmt_msg(clientid, filename, conn = None):
     data = get_data(conn,filename,"server_m_time")
     msg = msgCode.SENDSMT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     return msg
+
+
+def get_sendcmt_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    
+    data = get_data(conn,filename,"client_m_time")
+    msg = msgCode.SENDCMT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+def get_conflict_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    
+    data = '\0'
+    msg = msgCode.CONFLICT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
 
 def get_servsync_msg(clientid, filename, conn = None):
 
