@@ -19,6 +19,8 @@ class msgCode:
     SERVSYNC = '0010'
     CONFLICT = '0011'
     SENDCMT = '0012'
+    SREQ = '0013'
+    TERMIN = '0050'
 
     delim = '|#|'
     endmark = '||<@@>||'
@@ -115,8 +117,25 @@ def get_conflict_msg(clientid, filename, conn = None):
 
 def get_servsync_msg(clientid, filename, conn = None):
 
+    # filename is insignificant here 
     if conn is None:
         conn = open_db()
     data = '\0'
     msg = msgCode.SERVSYNC + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+def get_sreq_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    data = get_data(conn,filename,"TIMESTAMP")
+    msg = msgCode.SREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+def get_terminate_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    data = '\0'
+    msg = msgCode.TERMIN + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     return msg

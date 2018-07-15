@@ -12,19 +12,26 @@ import tempfile
 
 MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
-DATA_SOCK_PORT  =  54322
+C_DATA_SOCK_PORT  =  54322
+S_DATA_SOCK_PORT = 54321
 locked = {}
 recieve_file_flag = False
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
-def service_message(msg, client, db_conn):
+
+
+def service_message(msg, client, addr, db_conn):
+    '''
+        Service msg as obtained from the client
+    '''
     
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
     #print msg_code, client_id, file_name, data
+    
     if msg_code == pm.msgCode.CREQ:
-        # request to connection and sync
+        # request to sync
         if os.path.exists(file_name) is True:
-            
+
             c_server_m_time, c_client_m_time = data.split('<##>')
             
             # for test purposes only. server db updation only occurs when some file updated by any client
@@ -35,16 +42,19 @@ def service_message(msg, client, db_conn):
             s_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
             s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
 
-            print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
-            print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
+            #print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
+            #print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
             
             #Case 1
             if s_server_m_time == c_server_m_time:
+                # server upddate time of both the file are same
                 if s_client_m_time == c_client_m_time:
                     # No update
                     return 0
                 else:
+
                     if c_client_m_time > s_client_m_time:
+                        # present client has more updated data 
                         # SENDSIG Sig
                         logging.info("Requesting Update for file : %s",file_name)
                         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
@@ -55,11 +65,12 @@ def service_message(msg, client, db_conn):
                         return 1
                     else:
                         # CONFLICT
+                        # [doubt]
                         msg = pm.get_conflict_msg(client_id,file_name, db_conn)
                         client.send(msg)
                         return 0
-            else:                               #The requesting client is not synced with server
-                
+            else:                               
+                # The requesting client is not synced with server
                 if c_client_m_time == s_client_m_time:
                     #REQSIG msg
                     logging.info("Sending Update for file : %s",file_name)
@@ -97,6 +108,28 @@ def service_message(msg, client, db_conn):
             #time.sleep(5) 
             return 1 
 
+    if msg_code == pm.msgCode.REQTOT:
+        header = pm.get_senddat_header(client_id,file_name, db_conn)
+        #logging.info("sending : header = %s", header)
+        client.send(header + pm.msgCode.endmark)
+
+        time.sleep(10)           # wait for client data socket to be ready
+        # now server sends the total file to client
+        server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_data_address = (addr[0], C_DATA_SOCK_PORT)
+        server_data_socket.connect(client_data_address)
+        #logging.debug("opening file : %s",file_name)
+        with open(file_name, 'rb') as f:
+            l = f.read(1000)
+            while l:
+                server_data_socket.send(l)
+                l = f.read(1000)
+            f.close()
+        logging.debug("file sent: %s", file_name)
+        server_data_socket.close()
+        time.sleep(2)
+        return 0 
+
     if msg_code == pm.msgCode.SENDDEL:
         # received delta
         delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
@@ -121,7 +154,7 @@ def service_message(msg, client, db_conn):
         
         #create a new socket and send the data via it
         data_socket = socket.socket()
-        addr = ('', DATA_SOCK_PORT)
+        addr = ('', S_DATA_SOCK_PORT)
         data_socket.bind(addr)
         print "Data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(1)
@@ -158,9 +191,26 @@ def service_message(msg, client, db_conn):
     if msg_code == pm.msgCode.SENDCMT:
         pm.update_db(db_conn,file_name,"client_m_time",data)
         db_conn.commit()
-        
+        return 0    
     
     if msg_code == pm.msgCode.SERVSYNC:
+        
+        # sync all server files with client
+        file_name_list = []
+        for dirpath, dirnames, filenames in os.walk('.'):
+            for filename in filenames:
+                if filename == "config.db":
+                    continue
+                fname = dirpath + '/' + filename
+                file_name_list.append(fname)
+                
+        for file_name in file_name_list:
+            msg = pm.get_sreq_msg(client_id,file_name,db_conn)
+            client.send(msg)
+            time.sleep(0.5)        
+        
+        termsg = pm.get_terminate_msg(client_id,'',db_conn)
+        client.send(termsg)
         return 0
 
 
@@ -175,9 +225,9 @@ def handle_request(client, addr, db_conn):
             if msg == "":
                 continue            
             #logging.info("recieved msg: %s",msg)
-            ret = service_message(msg, client, db_conn)
-    
+            ret = service_message(msg, client, addr, db_conn)
     client.close()
+
 
 def _main():
     # create a server socket
@@ -200,9 +250,7 @@ def _main():
         t = Thread(handle_request(client,addr,db_conn))
         threads.append(t)
         t.start()
-        time.sleep(10)
-        
-
+        time.sleep(5)
 
     server.close()
 

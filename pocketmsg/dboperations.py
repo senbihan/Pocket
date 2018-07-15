@@ -79,6 +79,8 @@ def get_data(conn, fileid, comm):
     fid = (fileid,)
     cur = conn.execute("select * from trans where file_id=?",fid)
     data = cur.fetchall()
+    if data is None:
+        return "NULL"
     #print "data from dbms", data
     if comm is 'CLIENT_M_TIME' or comm is 'client_m_time':
         if str(data[0][2]) == 'NULL':
