@@ -28,7 +28,7 @@ To Run, Test you need these :
 2. inotify  :
       >For Debian/Ubuntu
       
-      1. run `sudo apt-get inotify-tools`.   (for inotify library)      
+      1. run `sudo apt-get install inotify-tools`.   (for inotify library)      
       2. run `sudo pip install inotify`  .   (for python wrapper)
 
 Otherwise, you can install librsync and inotify library and then            

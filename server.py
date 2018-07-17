@@ -115,7 +115,7 @@ def service_message(msg, client, addr, db_conn):
             continue
         pm.SharedPort.client_port_used = True
 
-        time.sleep(10)           # wait for client data socket to be ready
+        time.sleep(4)           # wait for client data socket to be ready
         # now server sends the total file to client
         server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_data_address = (addr[0], C_DATA_SOCK_PORT)

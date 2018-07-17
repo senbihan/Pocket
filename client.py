@@ -193,7 +193,7 @@ def server_sync(db_conn, client_id, client_socket):
 
 
 def server_sync_daemon(db_conn, client_id, client_socket):
-    threading.Timer(20.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
+    threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
     server_sync(db_conn, client_id, client_socket)
 
 def _main():
@@ -263,7 +263,7 @@ def _main():
                 (_, type_names, path, filename) = event
                 if filename is '' or filename == 'config.db' or filename == 'config.db-journal':
                     continue
-                if filename[0] == '.': # .goutputstream-ZC9VLZ
+                if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                     continue
                 total_file_name = path + '/' + filename
                 if 'IN_CLOSE_WRITE' in type_names:
