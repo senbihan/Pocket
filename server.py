@@ -12,10 +12,8 @@ import tempfile
 
 MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
-C_DATA_SOCK_PORT  =  54322
-S_DATA_SOCK_PORT = 54321
-locked = {}
-recieve_file_flag = False
+C_DATA_SOCK_PORT = pm.SharedPort.client_port
+S_DATA_SOCK_PORT = pm.SharedPort.server_port
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 
@@ -50,7 +48,7 @@ def service_message(msg, client, addr, db_conn):
                 # server upddate time of both the file are same
                 if s_client_m_time == c_client_m_time:
                     # No update
-                    return 0
+                    return 1
                 else:
 
                     if c_client_m_time > s_client_m_time:
@@ -68,7 +66,7 @@ def service_message(msg, client, addr, db_conn):
                         # [doubt]
                         msg = pm.get_conflict_msg(client_id,file_name, db_conn)
                         client.send(msg)
-                        return 0
+                        return 1
             else:                               
                 # The requesting client is not synced with server
                 if c_client_m_time == s_client_m_time:
@@ -113,6 +111,10 @@ def service_message(msg, client, addr, db_conn):
         #logging.info("sending : header = %s", header)
         client.send(header + pm.msgCode.endmark)
 
+        while pm.SharedPort.client_port_used:
+            continue
+        pm.SharedPort.client_port_used = True
+
         time.sleep(10)           # wait for client data socket to be ready
         # now server sends the total file to client
         server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -120,15 +122,16 @@ def service_message(msg, client, addr, db_conn):
         server_data_socket.connect(client_data_address)
         #logging.debug("opening file : %s",file_name)
         with open(file_name, 'rb') as f:
-            l = f.read(1000)
+            l = f.read(BUFFER_SIZE)
             while l:
                 server_data_socket.send(l)
-                l = f.read(1000)
+                l = f.read(BUFFER_SIZE)
             f.close()
         logging.debug("file sent: %s", file_name)
         server_data_socket.close()
-        time.sleep(2)
-        return 0 
+
+        pm.SharedPort.client_port_used = False
+        return 1 
 
     if msg_code == pm.msgCode.SENDDEL:
         # received delta
@@ -141,57 +144,55 @@ def service_message(msg, client, addr, db_conn):
         synced_file.close()
         print "Updation Successful"
 
-        #print "SERVER M TIME : ", os.path.getmtime(file_name)
         pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
         #logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
-        return 0
+        return 1
     
     if msg_code == pm.msgCode.SENDDAT:
         
         #create a new socket and send the data via it
+        
         data_socket = socket.socket()
         addr = ('', S_DATA_SOCK_PORT)
         data_socket.bind(addr)
-        print "Data socket is ready at: {}".format(data_socket.getsockname())
-        data_socket.listen(1)
+        print "Server data socket is ready at: {}".format(data_socket.getsockname())
+        data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
         with open(file_name, 'wb') as f:
             while True:
-                data = client_data_sock.recv(1000)
+                data = client_data_sock.recv(BUFFER_SIZE)
                 if not data:
                     break
                 f.write(data)
             f.close()
         logging.info("file recieved: %s",file_name)
         data_socket.close()
+        client_data_sock.close()
 
         #update server_m_time
-        #print "SERVER M TIME : ", os.path.getmtime(file_name)
         ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
-        #logging.info("returning msg for updating SMT: %s",ret_msg)
+        #logging.info("returning msg for updating SMT:")
         client.send(ret_msg)
-        #time.sleep(5)  
-        return 0
+        return 1
 
     if msg_code == pm.msgCode.SENDSIG:
         #compute delta and send
         #logging.info("Sync-ing and sending %s", file_name)
         msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
-        #print "delta: ", msg
         client.send(msg)
         return 1
 
     if msg_code == pm.msgCode.SENDCMT:
         pm.update_db(db_conn,file_name,"client_m_time",data)
         db_conn.commit()
-        return 0    
+        return 1    
     
     if msg_code == pm.msgCode.SERVSYNC:
         
@@ -211,7 +212,7 @@ def service_message(msg, client, addr, db_conn):
         
         termsg = pm.get_terminate_msg(client_id,'',db_conn)
         client.send(termsg)
-        return 0
+        return 1
 
 
 def handle_request(client, addr, db_conn):
@@ -224,10 +225,10 @@ def handle_request(client, addr, db_conn):
         for msg in msgList.split(pm.msgCode.endmark):
             if msg == "":
                 continue            
-            #logging.info("recieved msg: %s",msg)
+            logging.info("recieved msg: %s",msg)
             ret = service_message(msg, client, addr, db_conn)
-    client.close()
-
+    
+    client.close()        
 
 def _main():
     # create a server socket
@@ -238,20 +239,17 @@ def _main():
     addr = ('', 0)
     server.bind(addr)
     print "Pocket Server Started at : {}".format(server.getsockname())
-    server.listen(10)
     db_conn = pm.open_db()
     pm.create_table(db_conn)
+    server.listen(20)
 
     # CLIENT SYNC (both for Online and Newly connected Client)
     threads = []
     while True:
         client, addr = server.accept()
-        logging.info("getting connection from %s",addr)
-        t = Thread(handle_request(client,addr,db_conn))
-        threads.append(t)
-        t.start()
-        time.sleep(5)
-
+        logging.info("[+] getting connection from %s",addr)
+        thread.start_new_thread(handle_request,(client,addr,db_conn))
+    
     server.close()
 
 

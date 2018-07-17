@@ -6,7 +6,7 @@ def open_db():
     ''' Open the client configuration database.
         If not present, creates a new one. '''
         
-    conn = sq.connect("config.db", isolation_level=None)
+    conn = sq.connect("config.db", isolation_level=None, check_same_thread=False)
     print "Database opened successfully!" 
     return conn
 
@@ -15,7 +15,7 @@ def create_table(conn):
     
     try:
         conn.execute('''CREATE TABLE trans
-            (FILE_ID        CHAR(10) PRIMARY KEY NOT NULL,
+            (FILE_ID        CHAR(80) PRIMARY KEY NOT NULL,
             SERVER_M_TIME   REAL,
             CLIENT_M_TIME   REAL);''')
         conn.commit()

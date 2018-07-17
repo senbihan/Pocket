@@ -76,4 +76,3 @@ S : if not present request to send the total file
                 6. send server.server_m_time       (server)         SENDSMT
                 7. update client.server_m_time     (client)
 
-    inotify on server

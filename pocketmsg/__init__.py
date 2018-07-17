@@ -6,6 +6,13 @@ import tempfile
 MAX_FILE_LEN = 50
 MAX_SPOOL = 1024 ** 2 * 5
 
+class SharedPort:
+    client_port = 59540
+    server_port = 59884
+
+    client_port_used = False
+    server_port_used = False
+
 class msgCode:
     CREQ    = '0001'
     SENDSIG = '0002'
