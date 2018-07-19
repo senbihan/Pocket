@@ -230,7 +230,6 @@ def service_message(msg, client, addr, db_conn, flag):
         if len(file_name_list) == 0:
             termsg = pm.get_terminate_msg(client_id,'',db_conn)
             server_sync_socket.send(termsg)
-            return 1
 
         for file_name in file_name_list:
             msg = pm.get_sreq_msg(client_id,file_name,db_conn)
