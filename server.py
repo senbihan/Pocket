@@ -167,6 +167,17 @@ def service_message(msg, client, addr, db_conn, flag):
         print "Server data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
+
+        # directory traversing
+        # if sub directories do not exist then create accordingly
+        subpath = file_name.split('/')
+        for i in range(len(subpath)-1):
+            dname = subpath[i]
+            if dname == '.':
+                continue
+            if os.path.exists(dname) is False:
+                os.mkdir(dname)
+
         with open(file_name, 'wb') as f:
             while True:
                 data = client_data_sock.recv(BUFFER_SIZE)
@@ -218,13 +229,12 @@ def service_message(msg, client, addr, db_conn, flag):
                     continue
                 fname = dirpath + '/' + filename
                 file_name_list.append(fname)
-
         
-        time.sleep(5)       # wait for client to be ready
+        time.sleep(1)       # wait for client to be ready
 
         server_sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_address = (addr[0],pm.SharedPort.client_sync_port)
-        print "connecting to Client Synchroniztion {}".format(client_address)
+        # print "connecting to Client Synchroniztion {}".format(client_address)
         server_sync_socket.connect(client_address)
 
         if len(file_name_list) == 0:
@@ -233,13 +243,15 @@ def service_message(msg, client, addr, db_conn, flag):
 
         for file_name in file_name_list:
             msg = pm.get_sreq_msg(client_id,file_name,db_conn)
-            print "sending", msg
             server_sync_socket.send(msg)
         
             handle_request(server_sync_socket,addr,db_conn, True)
         
 
-        logging.info("All file synced!")
+        logging.info("All file synced with client %s!",client_id)
+        termsg = pm.get_terminate_msg(client_id,'',db_conn)
+        server_sync_socket.send(termsg)
+
         server_sync_socket.close()
 
         return 1
@@ -260,7 +272,7 @@ def handle_request(client, addr, db_conn, flag = False):
             logging.info("recieved msg: %s",msg)
             ret = service_message(msg, client, addr, db_conn, flag)
     
-    if flag is False:
+    if flag is False:   # main thread
         client.close()        
 
 def _main():

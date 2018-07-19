@@ -40,7 +40,7 @@ def service_message(msg, client_socket, db_conn):
         #logging.info("sending : header = %s", header)
         client_socket.send(header + pm.msgCode.endmark)
 
-        time.sleep(5)           # wait for server data socket to be ready
+        time.sleep(1)           # wait for server data socket to be ready
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_data_address = (SERVER_IP,S_DATA_SOCK_PORT)
         client_data_socket.connect(server_data_address)
@@ -119,6 +119,17 @@ def service_message(msg, client_socket, db_conn):
         print "Client data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
+        
+        # directory traversing
+        # if sub directories do not exist then create accordingly
+        subpath = file_name.split('/')
+        for i in range(len(subpath)-1):
+            dname = subpath[i]
+            if dname == '.':
+                continue
+            if os.path.exists(dname) is False:
+                os.mkdir(dname)
+
         with open(file_name, 'wb') as f:
             while True:
                 data = client_data_sock.recv(1000)
@@ -140,8 +151,8 @@ def service_message(msg, client_socket, db_conn):
             c_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
             c_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
 
-            print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
-            print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
+            # print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
+            # print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
 
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
@@ -161,7 +172,7 @@ def service_message(msg, client_socket, db_conn):
             logging.info("Requesting File: %s",file_name)
             tempFiles.append(file_name)
             sm_time, cm_time = data.split('<##>')
-            print "timestamp", sm_time, cm_time
+            #print "timestamp", sm_time, cm_time
             pm.update_db(db_conn,file_name,"client_m_time",cm_time)
             pm.update_db(db_conn,file_name,"server_m_time",sm_time)
             db_conn.commit()
@@ -209,21 +220,14 @@ def server_sync_daemon(db_conn, client_id, client_socket):
 
     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
     client_socket.send(msg)
-    #server_sync(db_conn,client_id,client_socket)
-
+    print "Sync-ing with server... Please wait... This may take a while..."
     # now this becomes a server
-    # logging.debug("locked : {}".format(pm.SharedPort.client_sync_port_used))
-    # while pm.SharedPort.client_sync_port_used:
-    #     continue
-    
-    # pm.SharedPort.client_sync_port_used = True
-    
     # logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     
     client_sync_socket = socket.socket()
     addr = ('', pm.SharedPort.client_sync_port)
     client_sync_socket.bind(addr)
-    print "Client Synchronization socket is ready at: {}".format(client_sync_socket.getsockname())
+    # print "Client Synchronization socket is ready at: {}".format(client_sync_socket.getsockname())
     client_sync_socket.listen(1)
     serv_sock, addr = client_sync_socket.accept()
     ret = 1
@@ -234,13 +238,13 @@ def server_sync_daemon(db_conn, client_id, client_socket):
         for msg in msglist.split(pm.msgCode.endmark):
             if msg == "":
                 break
-            logging.debug("msg from server : %s",msg)
+            #logging.debug("Inside Serversync Daemon: msg from server : %s",msg)
             ret = service_message(msg,serv_sock,db_conn)
     
-    serv_sock.close()
+    #serv_sock.close()
     client_sync_socket.close()
-
-    pm.SharedPort.client_sync_port_used = False
+    logging.info("All file synced with server!")
+        
     
 
 def _main():
@@ -310,18 +314,18 @@ def _main():
                 if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                     continue
                 total_file_name = path + '/' + filename
+                print type_names
                 if 'IN_CLOSE_WRITE' in type_names:
                     print "updating ", total_file_name
                     if total_file_name in tempFiles:    # just downloaded files
                         continue
+                    logging.info("sending update to server")
                     pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                     db_conn.commit()
                     msg = pm.get_creq_msg(client_id,file_name,db_conn)
                     client_socket.send(msg)
                     t = Thread(handle_request(client_socket,db_conn))
                     t.start()
-        
-                
 
             
 
