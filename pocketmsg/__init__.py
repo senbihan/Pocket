@@ -9,7 +9,7 @@ MAX_SPOOL = 1024 ** 2 * 5
 class SharedPort:
     client_port = 52132
     server_port = 57929
-    client_sync_port = 25795
+    client_sync_port = 25796
 
     client_port_used = False
     server_port_used = False

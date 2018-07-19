@@ -260,7 +260,8 @@ def handle_request(client, addr, db_conn, flag = False):
             logging.info("recieved msg: %s",msg)
             ret = service_message(msg, client, addr, db_conn, flag)
     
-    client.close()        
+    if flag is False:
+        client.close()        
 
 def _main():
     # create a server socket
@@ -280,7 +281,7 @@ def _main():
     while True:
         client, addr = server.accept()
         logging.info("[+] getting connection from %s",addr)
-        thread.start_new_thread(handle_request,(client,addr,db_conn))
+        thread.start_new_thread(handle_request,(client,addr,db_conn, False))
     
     server.close()
 

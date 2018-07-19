@@ -212,13 +212,13 @@ def server_sync_daemon(db_conn, client_id, client_socket):
     #server_sync(db_conn,client_id,client_socket)
 
     # now this becomes a server
-    logging.debug("locked : {}".format(pm.SharedPort.client_sync_port_used))
-    while pm.SharedPort.client_sync_port_used:
-        continue
+    # logging.debug("locked : {}".format(pm.SharedPort.client_sync_port_used))
+    # while pm.SharedPort.client_sync_port_used:
+    #     continue
     
-    pm.SharedPort.client_sync_port_used = True
+    # pm.SharedPort.client_sync_port_used = True
     
-    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    # logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     
     client_sync_socket = socket.socket()
     addr = ('', pm.SharedPort.client_sync_port)
