@@ -316,9 +316,11 @@ def _main():
                 total_file_name = path + '/' + filename
                 print type_names
                 if 'IN_CLOSE_WRITE' in type_names:
-                    print "updating ", total_file_name
                     if total_file_name in tempFiles:    # just downloaded files
+                        tempFiles.remove(total_file_name)
                         continue
+                    
+                    print "updating ", total_file_name
                     logging.info("sending update to server")
                     pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                     db_conn.commit()
