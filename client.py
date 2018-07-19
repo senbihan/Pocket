@@ -222,8 +222,15 @@ def server_sync_daemon(db_conn, client_id, client_socket):
     client_socket.send(msg)
     print "Sync-ing with server... Please wait... This may take a while..."
     # now this becomes a server
-    # logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     
+    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    while pm.SharedPort.client_sync_port_used:
+        time.sleep(5)
+        continue
+
+    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    pm.SharedPort.client_sync_port_used = True
+
     client_sync_socket = socket.socket()
     addr = ('', pm.SharedPort.client_sync_port)
     client_sync_socket.bind(addr)
@@ -243,6 +250,7 @@ def server_sync_daemon(db_conn, client_id, client_socket):
     
     #serv_sock.close()
     client_sync_socket.close()
+    pm.SharedPort.client_sync_port_used = False
     logging.info("All file synced with server!")
         
     
@@ -324,7 +332,7 @@ def _main():
                     logging.info("sending update to server")
                     pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                     db_conn.commit()
-                    msg = pm.get_creq_msg(client_id,file_name,db_conn)
+                    msg = pm.get_creq_msg(client_id,total_file_name,db_conn)
                     client_socket.send(msg)
                     t = Thread(handle_request(client_socket,db_conn))
                     t.start()
