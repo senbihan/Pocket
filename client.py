@@ -228,8 +228,9 @@ def server_sync_daemon(db_conn, client_id, client_socket):
         time.sleep(5)
         continue
 
-    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     pm.SharedPort.client_sync_port_used = True
+    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    
 
     client_sync_socket = socket.socket()
     addr = ('', pm.SharedPort.client_sync_port)
@@ -322,7 +323,7 @@ def _main():
                 if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                     continue
                 total_file_name = path + '/' + filename
-                print type_names
+                print type_names, total_file_name   
                 if 'IN_CLOSE_WRITE' in type_names:
                     if total_file_name in tempFiles:    # just downloaded files
                         tempFiles.remove(total_file_name)
