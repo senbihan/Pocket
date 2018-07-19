@@ -6,10 +6,12 @@ import pocketmsg as pm
 import os
 import logging
 import time
+import traceback
 import librsync as sync
 import tempfile
 
 
+sh_completed = 0
 MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
@@ -18,11 +20,12 @@ logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 
 
-def service_message(msg, client, addr, db_conn):
+def service_message(msg, client, addr, db_conn, flag):
     '''
         Service msg as obtained from the client
     '''
-    
+    global sh_completed
+
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
     #print msg_code, client_id, file_name, data
     
@@ -108,17 +111,13 @@ def service_message(msg, client, addr, db_conn):
 
     if msg_code == pm.msgCode.REQTOT:
         header = pm.get_senddat_header(client_id,file_name, db_conn)
-        #logging.info("sending : header = %s", header)
         client.send(header + pm.msgCode.endmark)
 
-        while pm.SharedPort.client_port_used:
-            continue
-        pm.SharedPort.client_port_used = True
-
-        time.sleep(4)           # wait for client data socket to be ready
+        time.sleep(10)           # wait for client data socket to be ready
         # now server sends the total file to client
         server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_data_address = (addr[0], C_DATA_SOCK_PORT)
+        print client_data_address
         server_data_socket.connect(client_data_address)
         #logging.debug("opening file : %s",file_name)
         with open(file_name, 'rb') as f:
@@ -129,8 +128,9 @@ def service_message(msg, client, addr, db_conn):
             f.close()
         logging.debug("file sent: %s", file_name)
         server_data_socket.close()
-
-        pm.SharedPort.client_port_used = False
+        
+        if flag:
+            return 0
         return 1 
 
     if msg_code == pm.msgCode.SENDDEL:
@@ -156,6 +156,11 @@ def service_message(msg, client, addr, db_conn):
         
         #create a new socket and send the data via it
         
+        while pm.SharedPort.server_port_used:
+            continue
+        
+        pm.SharedPort.server_port_used = True
+
         data_socket = socket.socket()
         addr = ('', S_DATA_SOCK_PORT)
         data_socket.bind(addr)
@@ -171,7 +176,7 @@ def service_message(msg, client, addr, db_conn):
             f.close()
         logging.info("file recieved: %s",file_name)
         data_socket.close()
-        client_data_sock.close()
+        pm.SharedPort.server_port_used = False
 
         #update server_m_time
         ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
@@ -190,9 +195,18 @@ def service_message(msg, client, addr, db_conn):
         return 1
 
     if msg_code == pm.msgCode.SENDCMT:
+        logging.info("updating cmt")
         pm.update_db(db_conn,file_name,"client_m_time",data)
         db_conn.commit()
+
+        if flag:
+            return 0
         return 1    
+
+    if msg_code == pm.msgCode.SENDNOC:
+        
+        sh_completed += 1
+        return 0
     
     if msg_code == pm.msgCode.SERVSYNC:
         
@@ -204,18 +218,37 @@ def service_message(msg, client, addr, db_conn):
                     continue
                 fname = dirpath + '/' + filename
                 file_name_list.append(fname)
-                
+
+        
+        time.sleep(5)       # wait for client to be ready
+
+        server_sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_address = (addr[0],pm.SharedPort.client_sync_port)
+        print "connecting to Client Synchroniztion {}".format(client_address)
+        server_sync_socket.connect(client_address)
+
+        if len(file_name_list) == 0:
+            termsg = pm.get_terminate_msg(client_id,'',db_conn)
+            server_sync_socket.send(termsg)
+            return 1
+
         for file_name in file_name_list:
             msg = pm.get_sreq_msg(client_id,file_name,db_conn)
-            client.send(msg)
-            time.sleep(0.5)        
+            print "sending", msg
+            server_sync_socket.send(msg)
         
-        termsg = pm.get_terminate_msg(client_id,'',db_conn)
-        client.send(termsg)
+            handle_request(server_sync_socket,addr,db_conn, True)
+        
+
+        logging.info("All file synced!")
+        server_sync_socket.close()
+
         return 1
 
 
-def handle_request(client, addr, db_conn):
+
+
+def handle_request(client, addr, db_conn, flag = False):
     ret = 1
     while ret == 1:
         msgList = client.recv(BUFFER_SIZE)
@@ -226,7 +259,7 @@ def handle_request(client, addr, db_conn):
             if msg == "":
                 continue            
             logging.info("recieved msg: %s",msg)
-            ret = service_message(msg, client, addr, db_conn)
+            ret = service_message(msg, client, addr, db_conn, flag)
     
     client.close()        
 

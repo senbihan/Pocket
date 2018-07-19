@@ -50,7 +50,7 @@ def update_db(conn, fileid, key, val):
         if val > ret_val or ret_val == "NULL":
             conn.execute("update trans set client_m_time = ? where file_id = ?",data)
             conn.commit()
-            return 1
+            return 0
         
         return 0
     
@@ -67,7 +67,7 @@ def update_db(conn, fileid, key, val):
         if val > ret_val or ret_val == "NULL":
             conn.execute("update trans set server_m_time = ? where file_id = ?",data)
             conn.commit()
-            return 1
+            return 0
         
         return 0
 

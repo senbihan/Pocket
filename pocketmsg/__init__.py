@@ -7,11 +7,13 @@ MAX_FILE_LEN = 50
 MAX_SPOOL = 1024 ** 2 * 5
 
 class SharedPort:
-    client_port = 59540
-    server_port = 59884
+    client_port = 52132
+    server_port = 57929
+    client_sync_port = 25795
 
     client_port_used = False
     server_port_used = False
+    client_sync_port_used = False
 
 class msgCode:
     CREQ    = '0001'
@@ -130,6 +132,15 @@ def get_servsync_msg(clientid, filename, conn = None):
     data = '\0'
     msg = msgCode.SERVSYNC + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     return msg
+
+def get_sendnoc_msg(clientid, filename, conn = None):
+    
+    if conn is None:
+        conn = open_db()
+    data = '\0'
+    msg = msgCode.SENDNOC + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
 
 def get_sreq_msg(clientid, filename, conn = None):
 

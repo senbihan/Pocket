@@ -6,6 +6,7 @@ import inotify.adapters
 import time
 import pocketmsg as pm
 import logging
+import thread
 import traceback
 from threading import Thread
 import threading
@@ -18,6 +19,7 @@ MAX_SPOOL       =   1024 ** 2 * 5
 SERVER_IP       =   ''
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
 S_DATA_SOCK_PORT = pm.SharedPort.server_port
+tempFiles = []
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
 usage : python client.py [path to the directory]
@@ -44,10 +46,10 @@ def service_message(msg, client_socket, db_conn):
         client_data_socket.connect(server_data_address)
         #logging.debug("opening file : %s",file_name)
         with open(file_name, 'rb') as f:
-            l = f.read(1000)
+            l = f.read(BUFFER_SIZE)
             while l:
                 client_data_socket.send(l)
-                l = f.read(1000)
+                l = f.read(BUFFER_SIZE)
             f.close()
         logging.debug("file sent: %s", file_name)
         client_data_socket.close()
@@ -138,24 +140,33 @@ def service_message(msg, client_socket, db_conn):
             c_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
             c_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
 
-            # print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
-            # print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
+            print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
+            print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
 
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
                 msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                 client_socket.send(msg)
                 return 1
+            
+            elif s_server_m_time == c_server_m_time:
+                # same copy
+                msg = pm.get_sendnoc_msg(client_id,file_name,db_conn)
+                client_socket.send(msg)
+                return 1
+            
 
         else :
-            logging.info("Requesting File: %s",file_name)
             # send a request to send the total file
+            logging.info("Requesting File: %s",file_name)
+            tempFiles.append(file_name)
             sm_time, cm_time = data.split('<##>')
+            print "timestamp", sm_time, cm_time
             pm.update_db(db_conn,file_name,"client_m_time",cm_time)
             pm.update_db(db_conn,file_name,"server_m_time",sm_time)
             db_conn.commit()
-            ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
-            client_socket.send(ret_msg)
+            msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
+            client_socket.send(msg)
             return 1 
 
 
@@ -185,16 +196,52 @@ def handle_request(client_socket, db_conn):
             ret = service_message(msg,client_socket,db_conn)
     
 
-def server_sync(db_conn, client_id, client_socket):
-    print "Sync-ing with server... Please wait... This may take a while..."
-    msg = pm.get_servsync_msg(client_id, '\0', db_conn)
-    client_socket.send(msg)
-    handle_request(client_socket,db_conn)
+# def server_sync(db_conn, client_id, client_socket):
+#     print "Sync-ing with server... Please wait... This may take a while..."
+#     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
+#     client_socket.send(msg)
+#     handle_request(client_socket,db_conn)
 
 
 def server_sync_daemon(db_conn, client_id, client_socket):
     threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
-    server_sync(db_conn, client_id, client_socket)
+    tempFiles[:] = []   # clear the list
+
+    msg = pm.get_servsync_msg(client_id, '\0', db_conn)
+    client_socket.send(msg)
+    #server_sync(db_conn,client_id,client_socket)
+
+    # now this becomes a server
+    logging.debug("locked : {}".format(pm.SharedPort.client_sync_port_used))
+    while pm.SharedPort.client_sync_port_used:
+        continue
+    
+    pm.SharedPort.client_sync_port_used = True
+    
+    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    
+    client_sync_socket = socket.socket()
+    addr = ('', pm.SharedPort.client_sync_port)
+    client_sync_socket.bind(addr)
+    print "Client Synchronization socket is ready at: {}".format(client_sync_socket.getsockname())
+    client_sync_socket.listen(1)
+    serv_sock, addr = client_sync_socket.accept()
+    ret = 1
+    while ret is 1:
+        msglist = serv_sock.recv(BUFFER_SIZE)
+        if msglist == "":
+            continue
+        for msg in msglist.split(pm.msgCode.endmark):
+            if msg == "":
+                break
+            logging.debug("msg from server : %s",msg)
+            ret = service_message(msg,serv_sock,db_conn)
+    
+    serv_sock.close()
+    client_sync_socket.close()
+
+    pm.SharedPort.client_sync_port_used = False
+    
 
 def _main():
     
@@ -218,11 +265,8 @@ def _main():
 
     try:
         #sync serverfiles
-        server_sync(db_conn, client_id, client_socket)
-        #serv_thread = Thread(server_sync(db_conn, client_id, client_socket))
-        #serv_thread.daemon = True
-        #serv_thread.start()
-        #serv_thread.join()
+        #server_sync(db_conn, client_id, client_socket)
+        server_sync_daemon(db_conn, client_id, client_socket)
 
         #sync client files to the server
         file_name_list = []
@@ -235,8 +279,8 @@ def _main():
                 ret = pm.update_db(db_conn,fname,"client_m_time",os.path.getmtime(fname))
                 db_conn.commit()
                 #logging.info("updating: %s" , ret)
-                #if ret == 1:
-                file_name_list.append(fname)
+                if ret == 1:
+                    file_name_list.append(fname)
                 
 
         # Client Sync
@@ -254,7 +298,7 @@ def _main():
 
 
         # start server_sync which will be running in 5 sec interval
-        server_sync_daemon(db_conn, client_id, client_socket)
+        # server_sync_daemon(db_conn, client_id, client_socket)
         print "Notifier started..."
         # add notifier to watch
         notifier = inotify.adapters.InotifyTree('.')
@@ -268,7 +312,9 @@ def _main():
                 total_file_name = path + '/' + filename
                 if 'IN_CLOSE_WRITE' in type_names:
                     print "updating ", total_file_name
-                    pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(fname))
+                    if total_file_name in tempFiles:    # just downloaded files
+                        continue
+                    pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                     db_conn.commit()
                     msg = pm.get_creq_msg(client_id,file_name,db_conn)
                     client_socket.send(msg)
