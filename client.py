@@ -21,6 +21,7 @@ C_DATA_SOCK_PORT = pm.SharedPort.client_port
 S_DATA_SOCK_PORT = pm.SharedPort.server_port
 tempFiles = []
 tempdelFiles = []
+tempmvFiles = []
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
 usage : python client.py [path to the directory]
@@ -30,6 +31,8 @@ logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 
 def service_message(msg, client_socket, db_conn):
+
+    global tempdelFiles, tempFiles, tempmvFiles
 
     if db_conn is None:
         db_conn = pm.open_db()
@@ -197,6 +200,7 @@ def service_message(msg, client_socket, db_conn):
         os.rename(data,file_name)
         pm.update_db_filename(db_conn,data,file_name)
         db_conn.commit()
+        tempmvFiles.append(file_name)
         return 0
 
     if msg_code == pm.msgCode.CONFLICT:
@@ -272,8 +276,7 @@ def server_sync_daemon(db_conn, client_id, client_socket):
 
 def _main():
     
-    global tempFiles
-    global tempdelFiles
+    global tempFiles, tempdelFiles, tempmvFiles
 
     if len(sys.argv) != 5:
         print USAGE_MESG
@@ -295,8 +298,8 @@ def _main():
 
     try:
         #sync serverfiles
-        #server_sync(db_conn, client_id, client_socket)
-        server_sync_daemon(db_conn, client_id, client_socket)
+        server_sync(db_conn, client_id, client_socket)
+        #server_sync_daemon(db_conn, client_id, client_socket)
 
         #sync client files to the server
         file_name_list = []
@@ -381,6 +384,11 @@ def _main():
                 
                 if 'IN_MOVED_TO' in type_names:
                     dest_file = total_file_name
+                    
+                    if total_file_name in tempmvFiles:
+                        tempmvFiles.remove(total_file_name)
+                        continue
+
                     if src_file is None:
                         continue
                     pm.update_db_filename(db_conn, src_file, dest_file)
