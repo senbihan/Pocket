@@ -156,6 +156,7 @@ def service_message(msg, client_socket, db_conn):
 
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
+                tempFiles.append(file_name)
                 msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                 client_socket.send(msg)
                 return 1
@@ -207,15 +208,7 @@ def handle_request(client_socket, db_conn):
             ret = service_message(msg,client_socket,db_conn)
     
 
-# def server_sync(db_conn, client_id, client_socket):
-#     print "Sync-ing with server... Please wait... This may take a while..."
-#     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
-#     client_socket.send(msg)
-#     handle_request(client_socket,db_conn)
-
-
-def server_sync_daemon(db_conn, client_id, client_socket):
-    threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
+def server_sync(db_conn, client_id, client_socket):
     tempFiles[:] = []   # clear the list
 
     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
@@ -253,7 +246,12 @@ def server_sync_daemon(db_conn, client_id, client_socket):
     client_sync_socket.close()
     pm.SharedPort.client_sync_port_used = False
     logging.info("All file synced with server!")
-        
+    
+
+
+def server_sync_daemon(db_conn, client_id, client_socket):
+    threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
+    server_sync(db_conn, client_id, client_socket)    
     
 
 def _main():
