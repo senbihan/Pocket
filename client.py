@@ -20,6 +20,7 @@ SERVER_IP       =   ''
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
 S_DATA_SOCK_PORT = pm.SharedPort.server_port
 tempFiles = []
+tempdelFiles = []
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
 usage : python client.py [path to the directory]
@@ -72,12 +73,15 @@ def service_message(msg, client_socket, db_conn):
 
     if msg_code == pm.msgCode.REQSIG:
 
+        # next update : create a data socket to send large signature
         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
         client_socket.send(msg)
         return 1
     
 
     if msg_code == pm.msgCode.SENDDEL:
+        
+        # next update : create a data socket to recieve large delta
         # received delta
         delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
         delta.write(data)
@@ -182,6 +186,18 @@ def service_message(msg, client_socket, db_conn):
             return 1 
 
 
+    if msg_code == pm.msgCode.DELREQ:
+        os.remove(file_name)
+        pm.delete_record(db_conn,file_name)
+        db_conn.commit()
+        tempdelFiles.append(file_name)
+        return 0
+
+    if msg_code == pm.msgCode.MVREQ:
+        os.rename(data,file_name)
+        pm.update_db_filename(db_conn,data,file_name)
+        db_conn.commit()
+        return 0
 
     if msg_code == pm.msgCode.CONFLICT:
         
@@ -256,6 +272,9 @@ def server_sync_daemon(db_conn, client_id, client_socket):
 
 def _main():
     
+    global tempFiles
+    global tempdelFiles
+
     if len(sys.argv) != 5:
         print USAGE_MESG
         exit(0)
@@ -313,6 +332,8 @@ def _main():
         print "Notifier started..."
         # add notifier to watch
         notifier = inotify.adapters.InotifyTree('.')
+        src_file = None
+        dest_file = None
         for event in notifier.event_gen():
             if event is not None:
                 (_, type_names, path, filename) = event
@@ -323,6 +344,9 @@ def _main():
                 total_file_name = path + '/' + filename
                 print type_names, total_file_name   
                 if 'IN_CLOSE_WRITE' in type_names:
+
+                    # for updation and new creation of files
+
                     if total_file_name in tempFiles:    # just downloaded files
                         tempFiles.remove(total_file_name)
                         continue
@@ -336,7 +360,39 @@ def _main():
                     t = Thread(handle_request(client_socket,db_conn))
                     t.start()
 
-            
+                if 'IN_DELETE' in type_names:
+                    
+                    # for deletion of files
+                    
+                    if total_file_name in tempdelFiles:
+                        tempdelFiles.remove(total_file_name)
+                        continue
+
+                    pm.delete_record(db_conn,total_file_name)
+                    db_conn.commit()
+                    logging.info("Deleting filename %s", total_file_name)
+                    msg = pm.get_delreq_msg(client_id,total_file_name,db_conn)
+                    client_socket.send(msg)
+                    t = Thread(handle_request(client_socket,db_conn))
+                    t.start()
+
+                if 'IN_MOVED_FROM' in type_names:
+                    src_file = total_file_name
+                
+                if 'IN_MOVED_TO' in type_names:
+                    dest_file = total_file_name
+                    if src_file is None:
+                        continue
+                    pm.update_db_filename(db_conn, src_file, dest_file)
+                    db_conn.commit()
+                    logging.info("Renaming filename %s to %s", src_file, total_file_name)
+                    msg = pm.get_mvreq_msg(client_id,total_file_name,src_file,db_conn)
+                    client_socket.send(msg)
+                    src_file = None
+                    dest_file = None
+                    t = Thread(handle_request(client_socket,db_conn))
+                    t.start()
+
 
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()

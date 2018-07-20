@@ -29,6 +29,8 @@ class msgCode:
     CONFLICT = '0011'
     SENDCMT = '0012'
     SREQ = '0013'
+    DELREQ = '0014'
+    MVREQ = '0015'
     TERMIN = '0050'
 
     delim = '|#|'
@@ -113,6 +115,27 @@ def get_sendcmt_msg(clientid, filename, conn = None):
     data = get_data(conn,filename,"client_m_time")
     msg = msgCode.SENDCMT + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
     return msg
+
+
+def get_delreq_msg(clientid, filename, conn = None):
+
+    if conn is None:
+        conn = open_db()
+    
+    data = '\0'
+    msg = msgCode.DELREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+def get_mvreq_msg(clientid, filename, data, conn = None):
+
+    # data is the old name
+    if conn is None:
+        conn = open_db()
+    
+    msg = msgCode.MVREQ + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + data + msgCode.endmark
+    return msg
+
+
 
 def get_conflict_msg(clientid, filename, conn = None):
 

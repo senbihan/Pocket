@@ -26,7 +26,7 @@ def create_table(conn):
 def insert_db(conn, data):
     ''' data is tuple with fileid, server_m_time, client_m_time
         inserts data into trans table'''
-    print "inserting ", data
+    #print "inserting ", data
     try:
         conn.execute("INSERT INTO trans VALUES(?,?,?)", data)
     except:
@@ -70,6 +70,23 @@ def update_db(conn, fileid, key, val):
             return 0
         
         return 0
+
+def update_db_filename(conn, oldfilename, newfilename):
+    if conn is None:
+        conn = open_db() 
+    fid = (newfilename,oldfilename)
+    conn.execute("update trans set file_id = ? file_id = ?",fid)
+    conn.commit()
+
+
+def delete_record(conn, fileid):
+
+    if conn is None:
+        conn = open_db() 
+    fid = (fileid,)
+    conn.execute("delete from trans where file_id=?",fid)
+    conn.commit()
+
 
 def get_data(conn, fileid, comm):
     ''' retrieve data from trans table based on command '''

@@ -16,6 +16,7 @@ MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
 S_DATA_SOCK_PORT = pm.SharedPort.server_port
+active_clients = []
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 
@@ -133,7 +134,7 @@ def service_message(msg, client, addr, db_conn, flag):
             return 0
         return 1 
 
-    if msg_code == pm.msgCode.SENDDEL:
+    if msg_code == pm.msgCode.SENDDEL:  ### check
         # received delta
         delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
         delta.write(data)
@@ -150,9 +151,18 @@ def service_message(msg, client, addr, db_conn, flag):
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
         #logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
+
+
+        for acclients in active_clients:
+            if acclients is not client:
+                msg = pm.get_sreq_msg(acclients,file_name,db_conn)
+                acclients.send(msg)
+        
+
+        
         return 1
     
-    if msg_code == pm.msgCode.SENDDAT:
+    if msg_code == pm.msgCode.SENDDAT:  ### check
         
         #create a new socket and send the data via it
         
@@ -196,6 +206,13 @@ def service_message(msg, client, addr, db_conn, flag):
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
         #logging.info("returning msg for updating SMT:")
         client.send(ret_msg)
+
+        for acclients in active_clients:
+            if acclients is not client:
+                msg = pm.get_sreq_msg(acclients,file_name,db_conn)
+                acclients.send(msg)
+        
+
         return 1
 
     if msg_code == pm.msgCode.SENDSIG:
@@ -219,6 +236,34 @@ def service_message(msg, client, addr, db_conn, flag):
         sh_completed += 1
         return 0
     
+
+    if msg_code == pm.msgCode.DELREQ:
+
+        os.remove(file_name)
+        pm.delete_record(db_conn,file_name)
+        db_conn.commit()
+        for acclients in active_clients:
+            if acclients is not client:
+                msg = pm.get_delreq_msg(acclients,file_name,db_conn)
+                acclients.send(msg)
+        
+        return 1
+
+    if msg_code == pm.msgCode.MVREQ:
+        
+        # data = old file name
+        os.rename(data,file_name)
+        pm.update_db_filename(db_conn,data,file_name)
+        db_conn.commit()
+        for acclients in active_clients:
+            if acclients is not client:
+                msg = pm.get_mvreq_msg(acclients,file_name,data,db_conn)
+                acclients.send(msg)
+        
+        return 1
+
+    
+
     if msg_code == pm.msgCode.SERVSYNC:
         
         # sync all server files with client
@@ -261,6 +306,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
 def handle_request(client, addr, db_conn, flag = False):
     ret = 1
+    global active_clients
     while ret == 1:
         msgList = client.recv(BUFFER_SIZE)
         if msgList == "":
@@ -273,9 +319,12 @@ def handle_request(client, addr, db_conn, flag = False):
             ret = service_message(msg, client, addr, db_conn, flag)
     
     if flag is False:   # main thread
-        client.close()        
+        client.close()
+        active_clients.remove(client)        
 
 def _main():
+
+    global active_clients
     # create a server socket
     if len(sys.argv) != 2:
         print "usage: python server.py [dirname]"    
@@ -290,8 +339,11 @@ def _main():
 
     # CLIENT SYNC (both for Online and Newly connected Client)
     threads = []
+
     while True:
         client, addr = server.accept()
+        if client not in active_clients:
+            active_clients.append(client)
         logging.info("[+] getting connection from %s",addr)
         thread.start_new_thread(handle_request,(client,addr,db_conn, False))
     
