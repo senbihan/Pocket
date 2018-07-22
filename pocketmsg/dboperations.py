@@ -75,7 +75,7 @@ def update_db_filename(conn, oldfilename, newfilename):
     if conn is None:
         conn = open_db() 
     fid = (newfilename,oldfilename)
-    conn.execute("update trans set file_id = ? file_id = ?",fid)
+    conn.execute("update trans set file_id = ? where file_id = ?",fid)
     conn.commit()
 
 

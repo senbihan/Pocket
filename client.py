@@ -226,6 +226,19 @@ def handle_request(client_socket, db_conn):
                 break
             logging.debug("msg from server : %s",msg)
             ret = service_message(msg,client_socket,db_conn)
+        
+
+def handle_request_loopless(client_socket, db_conn):
+    ''' request handler for client '''
+    msglist = client_socket.recv(BUFFER_SIZE)
+    if msglist == "":
+        return
+    for msg in msglist.split(pm.msgCode.endmark):
+        if msg == "":
+            break
+        logging.debug("msg from server : %s",msg)
+        service_message(msg,client_socket,db_conn)
+    time.sleep(2)
     
 
 def server_sync(db_conn, client_id, client_socket):
@@ -269,10 +282,80 @@ def server_sync(db_conn, client_id, client_socket):
     
 
 
-def server_sync_daemon(db_conn, client_id, client_socket):
-    threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
-    server_sync(db_conn, client_id, client_socket)    
+# def server_sync_daemon(db_conn, client_id, client_socket):
+#     threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
+#     server_sync(db_conn, client_id, client_socket)    
     
+def updation_on_change(db_conn, client_socket):
+    """
+        Inotify Event Listner
+    """
+    print "Notifier started..."
+    # add notifier to watch
+    notifier = inotify.adapters.InotifyTree('.')
+    src_file = None
+    dest_file = None
+    for event in notifier.event_gen():
+        if event is not None:
+            (_, type_names, path, filename) = event
+            if filename is '' or filename == 'config.db' or filename == 'config.db-journal':
+                continue
+            if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
+                continue
+            total_file_name = path + '/' + filename
+            print type_names, total_file_name   
+            if 'IN_CLOSE_WRITE' in type_names:
+
+                # for updation and new creation of files
+
+                if total_file_name in tempFiles:    # just downloaded files
+                    tempFiles.remove(total_file_name)
+                    continue
+                
+                print "updating ", total_file_name
+                logging.info("sending update to server")
+                pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
+                db_conn.commit()
+                msg = pm.get_creq_msg(client_id,total_file_name,db_conn)
+                client_socket.send(msg)
+                # t = thread.start_new_thread(handle_request(client_socket,db_conn))                    
+
+            if 'IN_DELETE' in type_names:
+                
+                # for deletion of files
+                if total_file_name in tempdelFiles:
+                    tempdelFiles.remove(total_file_name)
+                    continue
+
+                pm.delete_record(db_conn,total_file_name)
+                db_conn.commit()
+                logging.info("Deleting file %s", total_file_name)
+                msg = pm.get_delreq_msg(client_id,total_file_name,db_conn)
+                client_socket.send(msg)
+                
+
+            if 'IN_MOVED_FROM' in type_names:
+                src_file = total_file_name
+            
+            if 'IN_MOVED_TO' in type_names:
+                dest_file = total_file_name
+                
+                if total_file_name in tempmvFiles:
+                    tempmvFiles.remove(total_file_name)
+                    continue
+
+                if src_file is None:
+                    continue
+                pm.update_db_filename(db_conn, src_file, dest_file)
+                db_conn.commit()
+                logging.info("Renaming filename %s to %s", src_file, total_file_name)
+                msg = pm.get_mvreq_msg(client_id,total_file_name,src_file,db_conn)
+                client_socket.send(msg)
+                src_file = None
+                dest_file = None
+
+        time.sleep(2)
+
 
 def _main():
     
@@ -330,77 +413,11 @@ def _main():
             t.join()
 
 
-        # start server_sync which will be running in 5 sec interval
-        # server_sync_daemon(db_conn, client_id, client_socket)
-        print "Notifier started..."
-        # add notifier to watch
-        notifier = inotify.adapters.InotifyTree('.')
-        src_file = None
-        dest_file = None
-        for event in notifier.event_gen():
-            if event is not None:
-                (_, type_names, path, filename) = event
-                if filename is '' or filename == 'config.db' or filename == 'config.db-journal':
-                    continue
-                if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
-                    continue
-                total_file_name = path + '/' + filename
-                print type_names, total_file_name   
-                if 'IN_CLOSE_WRITE' in type_names:
-
-                    # for updation and new creation of files
-
-                    if total_file_name in tempFiles:    # just downloaded files
-                        tempFiles.remove(total_file_name)
-                        continue
+        client_listener = thread.start_new_thread(handle_request_loopless, (client_socket,db_conn))
+        notifier_listener = thread.start_new_thread(updation_on_change(db_conn,client_socket))
                     
-                    print "updating ", total_file_name
-                    logging.info("sending update to server")
-                    pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
-                    db_conn.commit()
-                    msg = pm.get_creq_msg(client_id,total_file_name,db_conn)
-                    client_socket.send(msg)
-                    t = Thread(handle_request(client_socket,db_conn))
-                    t.start()
-
-                if 'IN_DELETE' in type_names:
-                    
-                    # for deletion of files
-                    
-                    if total_file_name in tempdelFiles:
-                        tempdelFiles.remove(total_file_name)
-                        continue
-
-                    pm.delete_record(db_conn,total_file_name)
-                    db_conn.commit()
-                    logging.info("Deleting filename %s", total_file_name)
-                    msg = pm.get_delreq_msg(client_id,total_file_name,db_conn)
-                    client_socket.send(msg)
-                    t = Thread(handle_request(client_socket,db_conn))
-                    t.start()
-
-                if 'IN_MOVED_FROM' in type_names:
-                    src_file = total_file_name
-                
-                if 'IN_MOVED_TO' in type_names:
-                    dest_file = total_file_name
-                    
-                    if total_file_name in tempmvFiles:
-                        tempmvFiles.remove(total_file_name)
-                        continue
-
-                    if src_file is None:
-                        continue
-                    pm.update_db_filename(db_conn, src_file, dest_file)
-                    db_conn.commit()
-                    logging.info("Renaming filename %s to %s", src_file, total_file_name)
-                    msg = pm.get_mvreq_msg(client_id,total_file_name,src_file,db_conn)
-                    client_socket.send(msg)
-                    src_file = None
-                    dest_file = None
-                    t = Thread(handle_request(client_socket,db_conn))
-                    t.start()
-
+        # client_listener.join()
+        # notifier_listener.join()
 
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()

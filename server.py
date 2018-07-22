@@ -17,6 +17,9 @@ BUFFER_SIZE =  1024
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
 S_DATA_SOCK_PORT = pm.SharedPort.server_port
 active_clients = []
+client_dict = {}
+
+
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
 
@@ -25,9 +28,10 @@ def service_message(msg, client, addr, db_conn, flag):
     '''
         Service msg as obtained from the client
     '''
-    global sh_completed
+    global sh_completed, active_clients, client_dict
 
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
+    client_dict[client] = client_id
     #print msg_code, client_id, file_name, data
     
     if msg_code == pm.msgCode.CREQ:
@@ -152,14 +156,17 @@ def service_message(msg, client, addr, db_conn, flag):
         #logging.info("returning msg for updating SMT: %s",ret_msg)
         client.send(ret_msg)
 
-
+        
+        print active_clients
+        print client_dict
         for acclients in active_clients:
-            if acclients is not client:
-                msg = pm.get_sreq_msg(acclients,file_name,db_conn)
+            if acclients != client:
+                logging.debug("sending SREQ to client %s",client_dict[acclients])
+                msg = pm.get_sreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
         
 
-        
+
         return 1
     
     if msg_code == pm.msgCode.SENDDAT:  ### check
@@ -207,9 +214,12 @@ def service_message(msg, client, addr, db_conn, flag):
         #logging.info("returning msg for updating SMT:")
         client.send(ret_msg)
 
+        print active_clients
+        print client_dict
         for acclients in active_clients:
-            if acclients is not client:
-                msg = pm.get_sreq_msg(acclients,file_name,db_conn)
+            if acclients != client:
+                logging.debug("sending SREQ to client %s",client_dict[acclients])
+                msg = pm.get_sreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
         
 
