@@ -118,7 +118,7 @@ def service_message(msg, client, addr, db_conn, flag):
         header = pm.get_senddat_header(client_id,file_name, db_conn)
         client.send(header + pm.msgCode.endmark)
 
-        time.sleep(10)           # wait for client data socket to be ready
+        time.sleep(1)           # wait for client data socket to be ready
         # now server sends the total file to client
         server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_data_address = (addr[0], C_DATA_SOCK_PORT)

@@ -44,7 +44,7 @@ def service_message(msg, client_socket, db_conn):
         #logging.info("sending : header = %s", header)
         client_socket.send(header + pm.msgCode.endmark)
 
-        time.sleep(1)           # wait for server data socket to be ready
+        # time.sleep(1)           # wait for server data socket to be ready
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_data_address = (SERVER_IP,S_DATA_SOCK_PORT)
         client_data_socket.connect(server_data_address)
@@ -251,7 +251,7 @@ def server_sync(db_conn, client_id, client_socket):
     
     logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     while pm.SharedPort.client_sync_port_used:
-        time.sleep(5)
+        #time.sleep(5)
         continue
 
     pm.SharedPort.client_sync_port_used = True
