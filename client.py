@@ -29,6 +29,10 @@ usage : python client.py [path to the directory]
 client_id = ''
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
+def wait():
+    count = int(1e7)
+    while count:
+        count -= 1 
 
 def service_message(msg, client_socket, db_conn):
 
@@ -45,6 +49,8 @@ def service_message(msg, client_socket, db_conn):
         client_socket.send(header + pm.msgCode.endmark)
 
         # time.sleep(1)           # wait for server data socket to be ready
+        wait()
+
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_data_address = (SERVER_IP,S_DATA_SOCK_PORT)
         client_data_socket.connect(server_data_address)

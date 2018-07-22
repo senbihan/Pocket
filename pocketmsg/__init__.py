@@ -7,9 +7,9 @@ MAX_FILE_LEN = 50
 MAX_SPOOL = 1024 ** 2 * 5
 
 class SharedPort:
-    client_port = 23112
-    server_port = 56744
-    client_sync_port = 23916
+    client_port = 22162
+    server_port = 56799
+    client_sync_port = 21916
     client_listner_port = 47668
 
     client_port_used = False
