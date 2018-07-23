@@ -22,21 +22,59 @@ S_DATA_SOCK_PORT = pm.SharedPort.server_port
 tempFiles = []
 tempdelFiles = []
 tempmvFiles = []
+locked = {}
+conflict = {}
+
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
-usage : python client.py [path to the directory]
+usage : python client.py [path to the directory] [ip] [port] [client_id]
 '''
 client_id = ''
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
-def wait():
-    count = int(1e7)
-    while count:
-        count -= 1 
+def wait_net_service(s, server, port, timeout=None):
+    """ Wait for network service to appear 
+        @param timeout: in seconds, if None or 0 wait forever
+        @return: True of False, if timeout is None may return only True or
+                 throw unhandled network exception
+    """
+    import errno
+
+    #s = socket.socket()
+    if timeout:
+        from time import time as now
+        # time module is needed to calc timeout shared between two exceptions
+        end = now() + timeout
+
+    while True:
+        try:
+            if timeout:
+                next_timeout = end - now()
+                if next_timeout < 0:
+                    return False
+                else:
+            	    s.settimeout(next_timeout)
+            
+            s.connect((server, port))
+        
+        except socket.timeout, err:
+            # this exception occurs only if timeout is set
+            if timeout:
+                return False
+      
+        except socket.error, err:
+            # catch timeout exception from underlying network library
+            # this one is different from socket.timeout
+            if type(err.args) != tuple or err[0] != errno.ETIMEDOUT:
+                continue
+        else:
+            # s.close()
+            return True
+
 
 def service_message(msg, client_socket, db_conn):
 
-    global tempdelFiles, tempFiles, tempmvFiles
+    global tempdelFiles, tempFiles, tempmvFiles, locked, conflict
 
     if db_conn is None:
         db_conn = pm.open_db()
@@ -44,17 +82,15 @@ def service_message(msg, client_socket, db_conn):
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
 
     if msg_code == pm.msgCode.REQTOT:
-        header = pm.get_senddat_header(client_id,file_name, db_conn)
+        header = pm.get_senddat_msg(client_id,file_name, db_conn)
         #logging.info("sending : header = %s", header)
-        client_socket.send(header + pm.msgCode.endmark)
-
-        # time.sleep(1)           # wait for server data socket to be ready
-        wait()
-
+        client_socket.send(header)
+        
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_data_address = (SERVER_IP,S_DATA_SOCK_PORT)
-        client_data_socket.connect(server_data_address)
-        #logging.debug("opening file : %s",file_name)
+        #logging.debug("waiting for data socket to be ready..")
+        wait_net_service(client_data_socket,SERVER_IP,S_DATA_SOCK_PORT, 10)
+        #client_data_socket.connect(server_data_address)
+        #logging.debug("Connected")
         with open(file_name, 'rb') as f:
             l = f.read(BUFFER_SIZE)
             while l:
@@ -63,30 +99,28 @@ def service_message(msg, client_socket, db_conn):
             f.close()
         logging.debug("file sent: %s", file_name)
         client_data_socket.close()
-                
         return 1
 
     if msg_code == pm.msgCode.SENDSMT:
         #logging.info("updating server_m_time of %s to %s",file_name,data)
         pm.update_db(db_conn,file_name,"server_m_time",data)
         db_conn.commit()
+        return 0
 
-        return 0        # important    
-
+        
     if msg_code == pm.msgCode.SENDSIG:
         #compute delta and send
         logging.info("Sync-ing and uploading %s", file_name)
         msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
         client_socket.send(msg)
         return 1
-
+        
     if msg_code == pm.msgCode.REQSIG:
 
         # next update : create a data socket to send large signature
         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
         client_socket.send(msg)
         return 1
-    
 
     if msg_code == pm.msgCode.SENDDEL:
         
@@ -96,7 +130,9 @@ def service_message(msg, client_socket, db_conn):
         delta.write(data)
         delta.seek(0)
 
-        ### Ask to Merge !!?
+        ### Ask to Merge 
+        ### Hard to produce this case
+        ### Happens when both updates are done at a same time instance 
         last_m_time = os.path.getmtime(file_name)
         db_m_time = pm.get_data(db_conn,file_name, "client_m_time")
         
@@ -107,7 +143,9 @@ def service_message(msg, client_socket, db_conn):
             ans = raw_input()
             if ans == 'n' or ans == 'N':
                 return 1
-         
+        
+        
+
         dest = open(file_name,'rb')
         synced_file = open(file_name,'wb')
         sync.patch(dest,delta,synced_file)      # patch the delta
@@ -120,7 +158,8 @@ def service_message(msg, client_socket, db_conn):
         ret_msg = pm.get_sendcmt_msg(client_id,file_name,db_conn)
         #logging.info("returning msg for updating SMT: %s",ret_msg)
         client_socket.send(ret_msg)
-        return 1    #  do not close connection
+        tempFiles.append(file_name)
+        return 1
 
 
     if msg_code == pm.msgCode.SENDDAT:
@@ -129,7 +168,7 @@ def service_message(msg, client_socket, db_conn):
         data_socket = socket.socket()
         addr = ('', C_DATA_SOCK_PORT)
         data_socket.bind(addr)
-        print "Client data socket is ready at: {}".format(data_socket.getsockname())
+        #print "Client data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
         
@@ -143,6 +182,13 @@ def service_message(msg, client_socket, db_conn):
             if os.path.exists(dname) is False:
                 os.mkdir(dname)
 
+        if file_name in locked and locked[file_name] == 1:
+            print "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!"
+            conflict[file_name] = 1
+            client_data_sock.close()
+            data_socket.close()
+            return 0
+        
         with open(file_name, 'wb') as f:
             while True:
                 data = client_data_sock.recv(1000)
@@ -154,6 +200,7 @@ def service_message(msg, client_socket, db_conn):
         client_data_sock.close()
         data_socket.close()
         return 1
+        
 
     if msg_code == pm.msgCode.SREQ:
         # SERVER sync
@@ -169,6 +216,11 @@ def service_message(msg, client_socket, db_conn):
 
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
+                if file_name in locked and locked[file_name] == 1:
+                    print "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!"
+                    conflict[file_name] = 1
+                    return 0
+                
                 tempFiles.append(file_name)
                 msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                 client_socket.send(msg)
@@ -192,7 +244,7 @@ def service_message(msg, client_socket, db_conn):
             db_conn.commit()
             msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
             client_socket.send(msg)
-            return 1 
+            return 1
 
 
     if msg_code == pm.msgCode.DELREQ:
@@ -216,36 +268,25 @@ def service_message(msg, client_socket, db_conn):
 
 
     if msg_code == pm.msgCode.TERMIN:
-        return 0    # close connection
+        return  0  # close connection
 
-
+        
 
 def handle_request(client_socket, db_conn):
     ''' request handler for client '''
-    ret = 1
-    while ret is 1:
+    
+    while True:
+        logging.debug("Listening Server: ")
         msglist = client_socket.recv(BUFFER_SIZE)
         if msglist == "":
-            continue
+            return
         for msg in msglist.split(pm.msgCode.endmark):
             if msg == "":
                 break
-            logging.debug("msg from server : %s",msg)
-            ret = service_message(msg,client_socket,db_conn)
+            #logging.debug("msg from server : %s",msg)
+            service_message(msg,client_socket,db_conn)
+        time.sleep(1)
         
-
-def handle_request_loopless(client_socket, db_conn):
-    ''' request handler for client '''
-    msglist = client_socket.recv(BUFFER_SIZE)
-    if msglist == "":
-        return
-    for msg in msglist.split(pm.msgCode.endmark):
-        if msg == "":
-            break
-        logging.debug("msg from server : %s",msg)
-        service_message(msg,client_socket,db_conn)
-    time.sleep(2)
-    
 
 def server_sync(db_conn, client_id, client_socket):
     tempFiles[:] = []   # clear the list
@@ -255,13 +296,13 @@ def server_sync(db_conn, client_id, client_socket):
     print "Sync-ing with server... Please wait... This may take a while..."
     # now this becomes a server
     
-    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    #logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     while pm.SharedPort.client_sync_port_used:
         #time.sleep(5)
         continue
 
     pm.SharedPort.client_sync_port_used = True
-    logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
+    #logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     
 
     client_sync_socket = socket.socket()
@@ -292,10 +333,13 @@ def server_sync(db_conn, client_id, client_socket):
 #     threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
 #     server_sync(db_conn, client_id, client_socket)    
     
-def updation_on_change(db_conn, client_socket):
+def updation_on_change(db_conn, client_socket, client_id):
     """
         Inotify Event Listner
     """
+
+    global locked
+
     print "Notifier started..."
     # add notifier to watch
     notifier = inotify.adapters.InotifyTree('.')
@@ -309,26 +353,45 @@ def updation_on_change(db_conn, client_socket):
             if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                 continue
             total_file_name = path + '/' + filename
-            print type_names, total_file_name   
+            #print type_names, total_file_name 
+
+            if 'IN_MODIFY' in type_names:
+
+                # currently being modified
+                locked[total_file_name] = 1
+
             if 'IN_CLOSE_WRITE' in type_names:
 
                 # for updation and new creation of files
+                locked[total_file_name] = 0
+                if total_file_name in conflict and conflict[total_file_name] == 1:
+                    print "CONFLICT : Server copy of " + total_file_name + " has been modified!"
+                    # remove local copy and download the latest server copy
+                    print "Server copy is being prioritized"
+                    os.remove(total_file_name)
+                    msg = pm.get_resend_msg(client_id,total_file_name)
+                    pm.delete_record(db_conn,total_file_name)
+                    client_socket.send(msg)
+                    continue
 
-                if total_file_name in tempFiles:    # just downloaded files
+                if total_file_name in tempFiles:    # just downloaded or pathced files
                     tempFiles.remove(total_file_name)
                     continue
                 
-                print "updating ", total_file_name
-                logging.info("sending update to server")
+                logging.info("sending update to server %s", total_file_name)
                 pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                 db_conn.commit()
                 msg = pm.get_creq_msg(client_id,total_file_name,db_conn)
                 client_socket.send(msg)
-                # t = thread.start_new_thread(handle_request(client_socket,db_conn))                    
 
             if 'IN_DELETE' in type_names:
                 
                 # for deletion of files
+
+                if total_file_name in conflict and conflict[total_file_name] == 1:
+                    conflict[total_file_name] = 0 
+                    continue
+
                 if total_file_name in tempdelFiles:
                     tempdelFiles.remove(total_file_name)
                     continue
@@ -360,7 +423,7 @@ def updation_on_change(db_conn, client_socket):
                 src_file = None
                 dest_file = None
 
-        time.sleep(2)
+        time.sleep(1)
 
 
 def _main():
@@ -384,43 +447,14 @@ def _main():
     print "connecting to Pocket File Server {}".format(server_address)
     client_socket.connect(server_address)
 
+    print "[+] Connected to Pocket File Server."
 
     try:
         #sync serverfiles
         server_sync(db_conn, client_id, client_socket)
-        #server_sync_daemon(db_conn, client_id, client_socket)
 
-        #sync client files to the server
-        file_name_list = []
-        for dirpath, dirnames, filenames in os.walk('.'):
-            for filename in filenames:
-                if filename == "config.db":
-                    continue
-                fname = dirpath + '/' + filename
-                #logging.info("updating client_m_time of %s" , fname)
-                ret = pm.update_db(db_conn,fname,"client_m_time",os.path.getmtime(fname))
-                db_conn.commit()
-                #logging.info("updating: %s" , ret)
-                if ret == 1:
-                    file_name_list.append(fname)
-                
-
-        # Client Sync
-        threads = []
-        for file_name in file_name_list:
-            print "sync-ing", file_name
-            msg = pm.get_creq_msg(client_id,file_name,db_conn)
-            client_socket.send(msg)
-            t = Thread(handle_request(client_socket,db_conn))
-            t.start()
-            threads.append(t)
-            
-        for t in threads:
-            t.join()
-
-
-        client_listener = thread.start_new_thread(handle_request_loopless, (client_socket,db_conn))
-        notifier_listener = thread.start_new_thread(updation_on_change(db_conn,client_socket))
+        client_listener = thread.start_new_thread(handle_request, (client_socket,db_conn))
+        notifier_listener = thread.start_new_thread(updation_on_change(db_conn,client_socket,client_id))
                     
         # client_listener.join()
         # notifier_listener.join()

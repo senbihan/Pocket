@@ -22,6 +22,44 @@ client_dict = {}
 
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
+def wait_net_service(s, server, port, timeout=None):
+    """ Wait for network service to appear 
+        @param timeout: in seconds, if None or 0 wait forever
+        @return: True of False, if timeout is None may return only True or
+                 throw unhandled network exception
+    """
+    import errno
+
+    # s = socket.socket()
+    if timeout:
+        from time import time as now
+        # time module is needed to calc timeout shared between two exceptions
+        end = now() + timeout
+
+    while True:
+        try:
+            if timeout:
+                next_timeout = end - now()
+                if next_timeout < 0:
+                    return False
+                else:
+            	    s.settimeout(next_timeout)
+            
+            s.connect((server, port))
+        
+        except socket.timeout, err:
+            # this exception occurs only if timeout is set
+            if timeout:
+                return False
+      
+        except socket.error, err:
+            # catch timeout exception from underlying network library
+            # this one is different from socket.timeout
+            if type(err.args) != tuple or err[0] != errno.ETIMEDOUT:
+                continue
+        else:
+            #s.close()
+            return True
 
 
 def service_message(msg, client, addr, db_conn, flag):
@@ -33,7 +71,8 @@ def service_message(msg, client, addr, db_conn, flag):
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
     client_dict[client] = client_id
     #print msg_code, client_id, file_name, data
-    
+    #print "name of ", client , "is ", client_id, " dict value: ", client_dict[client]
+
     if msg_code == pm.msgCode.CREQ:
         # request to sync
         if os.path.exists(file_name) is True:
@@ -62,7 +101,7 @@ def service_message(msg, client, addr, db_conn, flag):
                     if c_client_m_time > s_client_m_time:
                         # present client has more updated data 
                         # SENDSIG Sig
-                        logging.info("Requesting Update for file : %s",file_name)
+                        logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
                         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                         #logging.info("sending signature of file : %s",file_name)
                         pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
@@ -79,14 +118,14 @@ def service_message(msg, client, addr, db_conn, flag):
                 # The requesting client is not synced with server
                 if c_client_m_time == s_client_m_time:
                     #REQSIG msg
-                    logging.info("Sending Update for file : %s",file_name)
+                    logging.info("Sending Update for file : %s to client %s",file_name, client_id)
                     msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
                     client.send(msg)
                     return 1
 
                 if c_client_m_time > s_client_m_time:
                     # SENDSIG Sig
-                    logging.info("Requesting Update for file : %s",file_name)
+                    logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
                     msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                     #logging.info("sending signature of file : %s",file_name)
                     pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
@@ -96,7 +135,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
                 elif c_client_m_time < s_client_m_time:
                     #REQSIG msg
-                    logging.info("Sending Update for file : %s",file_name)
+                    logging.info("Sending Update for file : %s to client %s",file_name, client_id)
                     msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
                     client.send(msg)
                     return 1
@@ -115,16 +154,16 @@ def service_message(msg, client, addr, db_conn, flag):
             return 1 
 
     if msg_code == pm.msgCode.REQTOT:
-        header = pm.get_senddat_header(client_id,file_name, db_conn)
-        client.send(header + pm.msgCode.endmark)
-
-        time.sleep(1)           # wait for client data socket to be ready
+        header = pm.get_senddat_msg(client_id,file_name, db_conn)
+        client.send(header)
+        #logging.debug("SENDDAT msg sent")
+        # time.sleep(1)           # wait for client data socket to be ready
         # now server sends the total file to client
         server_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_data_address = (addr[0], C_DATA_SOCK_PORT)
-        print client_data_address
-        server_data_socket.connect(client_data_address)
-        #logging.debug("opening file : %s",file_name)
+        wait_net_service(server_data_socket, addr[0],C_DATA_SOCK_PORT)
+        #server_data_socket.connect(client_data_address)
+        #logging.debug("connected!")
+
         with open(file_name, 'rb') as f:
             l = f.read(BUFFER_SIZE)
             while l:
@@ -157,15 +196,13 @@ def service_message(msg, client, addr, db_conn, flag):
         client.send(ret_msg)
 
         
-        print active_clients
-        print client_dict
+        #print active_clients
+        #print client_dict
         for acclients in active_clients:
-            if acclients != client:
-                logging.debug("sending SREQ to client %s",client_dict[acclients])
+            if acclients != client and client_id != client_dict[acclients]:
+                #logging.debug("sending SREQ to client %s",client_dict[acclients])
                 msg = pm.get_sreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
-        
-
 
         return 1
     
@@ -181,7 +218,7 @@ def service_message(msg, client, addr, db_conn, flag):
         data_socket = socket.socket()
         addr = ('', S_DATA_SOCK_PORT)
         data_socket.bind(addr)
-        print "Server data socket is ready at: {}".format(data_socket.getsockname())
+        #print "Server data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
 
@@ -214,11 +251,11 @@ def service_message(msg, client, addr, db_conn, flag):
         #logging.info("returning msg for updating SMT:")
         client.send(ret_msg)
 
-        print active_clients
-        print client_dict
+        #print active_clients
+        #print client_dict
         for acclients in active_clients:
-            if acclients != client:
-                logging.debug("sending SREQ to client %s",client_dict[acclients])
+            if acclients != client and client_id != client_dict[acclients]:
+                #logging.debug("sending SREQ to client %s",client_dict[acclients])
                 msg = pm.get_sreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
         
@@ -233,7 +270,7 @@ def service_message(msg, client, addr, db_conn, flag):
         return 1
 
     if msg_code == pm.msgCode.SENDCMT:
-        logging.info("updating cmt")
+        #logging.info("updating cmt")
         pm.update_db(db_conn,file_name,"client_m_time",data)
         db_conn.commit()
 
@@ -246,6 +283,13 @@ def service_message(msg, client, addr, db_conn, flag):
         sh_completed += 1
         return 0
     
+    if msg_code == pm.msgCode.RESEND:
+
+        msg = pm.get_sreq_msg(client_id,file_name,db_conn)
+        client.send(msg)
+        
+        return 1
+        
 
     if msg_code == pm.msgCode.DELREQ:
 
@@ -254,7 +298,7 @@ def service_message(msg, client, addr, db_conn, flag):
         db_conn.commit()
         for acclients in active_clients:
             if acclients is not client:
-                msg = pm.get_delreq_msg(acclients,file_name,db_conn)
+                msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
         
         return 1
@@ -267,7 +311,7 @@ def service_message(msg, client, addr, db_conn, flag):
         db_conn.commit()
         for acclients in active_clients:
             if acclients is not client:
-                msg = pm.get_mvreq_msg(acclients,file_name,data,db_conn)
+                msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
                 acclients.send(msg)
         
         return 1
@@ -285,12 +329,12 @@ def service_message(msg, client, addr, db_conn, flag):
                 fname = dirpath + '/' + filename
                 file_name_list.append(fname)
         
-        time.sleep(1)       # wait for client to be ready
 
         server_sync_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client_address = (addr[0],pm.SharedPort.client_sync_port)
+        wait_net_service(server_sync_socket, addr[0],pm.SharedPort.client_sync_port, 5)
         # print "connecting to Client Synchroniztion {}".format(client_address)
-        server_sync_socket.connect(client_address)
+        #server_sync_socket.connect(client_address)
 
         if len(file_name_list) == 0:
             termsg = pm.get_terminate_msg(client_id,'',db_conn)
@@ -325,8 +369,10 @@ def handle_request(client, addr, db_conn, flag = False):
         for msg in msgList.split(pm.msgCode.endmark):
             if msg == "":
                 continue            
-            logging.info("recieved msg: %s",msg)
+            #logging.info("recieved msg: %s",msg)
             ret = service_message(msg, client, addr, db_conn, flag)
+        
+        time.sleep(0.5)
     
     if flag is False:   # main thread
         client.close()
