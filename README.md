@@ -34,6 +34,17 @@ To Run, Test you need these :
 Otherwise, you can install librsync and inotify library and then            
 run `$sudo python setup.py install` to install the python wrappers.
 
+**Running**
+
+Running Server<br/>
+<img src='images/server.png' width = 800>
+
+
+Running Client<br/>
+<img src='images/client_one.png' width = 800>
+
+
+****
 **Credits**
 
 Credits for the open-source library used in this project:<br/>
