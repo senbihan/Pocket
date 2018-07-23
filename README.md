@@ -36,11 +36,13 @@ run `$sudo python setup.py install` to install the python wrappers.
 
 **Running**
 
-Running Server<br/>
+##### Running Server<br/>
+
 <img src='images/server.png' width = 800>
 
 
-Running Client<br/>
+##### Running Client<br/>
+
 <img src='images/client_one.png' width = 800>
 
 
