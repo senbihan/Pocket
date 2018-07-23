@@ -62,6 +62,117 @@ def wait_net_service(s, server, port, timeout=None):
             return True
 
 
+def send_signature(client_id, ip, file_name, db_conn, client):
+
+    msg = pm.get_sensig_msg(client_id,file_name,db_conn)
+    client.send(msg)
+
+    # connect for sync
+    server_sig_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    wait_net_service(server_sig_socket, ip,pm.SharedPort.client_sig_port)
+
+    # calculate signature
+    sig = sync.signature(open(file_name,"rb+"))
+
+    # logging.info("sending signature of file : %s",file_name)
+    
+    l = sig.read(BUFFER_SIZE)
+    while l:
+        server_sig_socket.send(l)
+        l = sig.read(BUFFER_SIZE)
+    sig.close()
+    server_sig_socket.close()
+    
+    logging.info("Signature Sent!")
+
+
+def recieve_delta_and_patch(file_name):
+
+    # receive delta
+    del_socket = socket.socket()
+    address = ('', pm.SharedPort.server_del_port)
+    del_socket.bind(address)
+    #print "Client del socket is ready at: {}".format(data_socket.getsockname())
+    del_socket.listen(10)
+    client_del_sock, addr = del_socket.accept()
+    
+    # Receive delta
+    deldata = ""
+    while True:
+        data = client_del_sock.recv(BUFFER_SIZE)
+        deldata += data
+        if not data:
+            break
+    
+    client_del_sock.close()
+    del_socket.close()
+    
+    logging.info("Delta has been received!")
+
+    delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+    delta.write(deldata)
+    delta.seek(0)
+    dest = open(file_name,'rb')
+    synced_file = open(file_name,'wb')
+    sync.patch(dest,delta,synced_file)      # patch the delta
+    synced_file.close()
+    
+    logging.info("Updation Successful for file %s",file_name)
+
+
+def recieve_signature_and_send_delta(client_id, client, ip, file_name, db_conn):
+
+    sig_socket = socket.socket()
+    address = ('', pm.SharedPort.server_sig_port)
+    sig_socket.bind(address)
+    #print "Client sig socket is ready at: {}".format(data_socket.getsockname())
+    sig_socket.listen(10)
+    client_sig_sock, addr = sig_socket.accept()
+    
+    # Receive Signature
+    sigdata = ""
+    while True:
+        data = client_sig_sock.recv(BUFFER_SIZE)
+        sigdata += data
+        if not data:
+            break
+    
+    client_sig_sock.close()
+    sig_socket.close()
+    
+    logging.info("Signature Received!")
+    # logging.info("Sync-ing and uploading %s", file_name)
+
+    # send SENDDEL msg 
+    msg = pm.get_senddel_msg(client_id,file_name,db_conn)
+    client.send(msg)
+
+    #calculate delta
+    signature = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+    signature.write(sigdata)
+    signature.seek(0)
+    src = open(file_name, 'rb')
+    delta = sync.delta(src,signature)        
+    
+    # connect to delta socket
+
+    client_del_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    wait_net_service(client_del_socket, ip ,pm.SharedPort.client_del_port)
+
+    # send delta
+
+    l = delta.read(BUFFER_SIZE)
+    while l:
+        client_del_socket.send(l)
+        l = delta.read(BUFFER_SIZE)
+    delta.close()
+
+    client_del_socket.close()
+    logging.info("Delta Sent!")
+
+
+
+
 def service_message(msg, client, addr, db_conn, flag):
     '''
         Service msg as obtained from the client
@@ -79,17 +190,9 @@ def service_message(msg, client, addr, db_conn, flag):
 
             c_server_m_time, c_client_m_time = data.split('<##>')
             
-            # for test purposes only. server db updation only occurs when some file updated by any client
-            # assuming server is running indefinitely
-            # pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
-            # db_conn.commit()
-            
             s_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
             s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
 
-            #print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
-            #print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
-            
             #Case 1
             if s_server_m_time == c_server_m_time:
                 # server upddate time of both the file are same
@@ -102,11 +205,9 @@ def service_message(msg, client, addr, db_conn, flag):
                         # present client has more updated data 
                         # SENDSIG Sig
                         logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
-                        msg = pm.get_sensig_msg(client_id,file_name,db_conn)
-                        #logging.info("sending signature of file : %s",file_name)
                         pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                         db_conn.commit()
-                        client.send(msg)
+                        send_signature(client_id, addr[0], file_name, db_conn, client)
                         return 1
                     else:
                         # CONFLICT
@@ -126,14 +227,13 @@ def service_message(msg, client, addr, db_conn, flag):
                 if c_client_m_time > s_client_m_time:
                     # SENDSIG Sig
                     logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
-                    msg = pm.get_sensig_msg(client_id,file_name,db_conn)
-                    #logging.info("sending signature of file : %s",file_name)
                     pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                     db_conn.commit()
-                    client.send(msg)
+                    send_signature(client_id, addr[0], file_name, db_conn, client)
                     return 1
 
                 elif c_client_m_time < s_client_m_time:
+
                     #REQSIG msg
                     logging.info("Sending Update for file : %s to client %s",file_name, client_id)
                     msg = pm.get_reqsig_msg(client_id,file_name,db_conn)
@@ -177,17 +277,10 @@ def service_message(msg, client, addr, db_conn, flag):
             return 0
         return 1 
 
-    if msg_code == pm.msgCode.SENDDEL:  ### check
-        # received delta
-        delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
-        delta.write(data)
-        delta.seek(0)
-        dest = open(file_name,'rb')
-        synced_file = open(file_name,'wb')
-        sync.patch(dest,delta,synced_file)      # patch the delta
-        synced_file.close()
-        print "Updation Successful"
-
+    if msg_code == pm.msgCode.SENDDEL: 
+        
+        recieve_delta_and_patch(file_name)
+        # necessary database updates
         pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
@@ -206,7 +299,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
         return 1
     
-    if msg_code == pm.msgCode.SENDDAT:  ### check
+    if msg_code == pm.msgCode.SENDDAT: 
         
         #create a new socket and send the data via it
         
@@ -216,8 +309,8 @@ def service_message(msg, client, addr, db_conn, flag):
         pm.SharedPort.server_port_used = True
 
         data_socket = socket.socket()
-        addr = ('', S_DATA_SOCK_PORT)
-        data_socket.bind(addr)
+        address = ('', S_DATA_SOCK_PORT)
+        data_socket.bind(address)
         #print "Server data socket is ready at: {}".format(data_socket.getsockname())
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
@@ -263,10 +356,8 @@ def service_message(msg, client, addr, db_conn, flag):
         return 1
 
     if msg_code == pm.msgCode.SENDSIG:
-        #compute delta and send
-        #logging.info("Sync-ing and sending %s", file_name)
-        msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
-        client.send(msg)
+
+        recieve_signature_and_send_delta(client_id, client, addr[0], file_name, db_conn)
         return 1
 
     if msg_code == pm.msgCode.SENDCMT:
@@ -293,26 +384,28 @@ def service_message(msg, client, addr, db_conn, flag):
 
     if msg_code == pm.msgCode.DELREQ:
 
-        os.remove(file_name)
-        pm.delete_record(db_conn,file_name)
-        db_conn.commit()
-        for acclients in active_clients:
-            if acclients is not client:
-                msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
-                acclients.send(msg)
-        
+        if os.path.exists(file_name):
+            os.remove(file_name)
+            pm.delete_record(db_conn,file_name)
+            db_conn.commit()
+            for acclients in active_clients:
+                if acclients is not client:
+                    msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
+                    acclients.send(msg)
+            
         return 1
 
     if msg_code == pm.msgCode.MVREQ:
         
         # data = old file name
-        os.rename(data,file_name)
-        pm.update_db_filename(db_conn,data,file_name)
-        db_conn.commit()
-        for acclients in active_clients:
-            if acclients is not client:
-                msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
-                acclients.send(msg)
+        if os.path.exists(data):
+            os.rename(data,file_name)
+            pm.update_db_filename(db_conn,data,file_name)
+            db_conn.commit()
+            for acclients in active_clients:
+                if acclients is not client:
+                    msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
+                    acclients.send(msg)
         
         return 1
 

@@ -7,10 +7,14 @@ MAX_FILE_LEN = 50
 MAX_SPOOL = 1024 ** 2 * 5
 
 class SharedPort:
-    client_port = 29361
-    server_port = 48881
-    client_sync_port = 21005
-    client_listner_port = 46248
+    client_port = 10001
+    server_port = 10002
+    client_sync_port = 10003
+    client_listner_port = 10004
+    client_sig_port = 10012
+    server_del_port = 10009
+    server_sig_port = 10010
+    client_del_port = 10011
 
     client_port_used = False
     server_port_used = False
@@ -51,28 +55,21 @@ def get_creq_msg(clientid, filename, conn = None):
 def get_sensig_msg(clientid, filename, conn = None):
     ''' create sendsig msg '''    
 
-    if conn is None:
-        conn = open_db()
-    sig = sync.signature(open(filename,"rb+"))
-    data = sig.read()
+    # if conn is None:
+    #     conn = open_db()
+    data = '\0'
     msg = msgCode.SENDSIG + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + str(data) + msgCode.endmark
     #print "sendsig msg", msg
     return msg
 
-def get_senddel_msg(clientid, filename, data, conn = None):
+def get_senddel_msg(clientid, filename, conn = None):
     ''' create senddel msg 
         filename : source filename
     '''
     
     if conn is None:
         conn = open_db()
-    signature = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
-    signature.write(data)
-    signature.seek(0)
-    src = open(filename, 'rb')
-    delta = sync.delta(src,signature)
-    sdata = delta.read()
-    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + str(sdata) + msgCode.endmark
+    msg = msgCode.SENDDEL + msgCode.delim + clientid + msgCode.delim + filename + msgCode.delim + '\0' + msgCode.endmark
     #print "senddel msg", msg
     return msg 
 

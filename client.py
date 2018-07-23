@@ -24,6 +24,7 @@ tempdelFiles = []
 tempmvFiles = []
 locked = {}
 conflict = {}
+delreq = {}
 
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
@@ -72,9 +73,30 @@ def wait_net_service(s, server, port, timeout=None):
             return True
 
 
+def send_signature(file_name):
+    
+    # connect for sync
+    client_sig_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    wait_net_service(client_sig_socket, SERVER_IP ,pm.SharedPort.server_sig_port)
+
+    # calculate signature
+    sig = sync.signature(open(file_name,"rb+"))
+
+    # logging.info("sending signature of file : %s",file_name)
+    
+    l = sig.read(BUFFER_SIZE)
+    while l:
+        client_sig_socket.send(l)
+        l = sig.read(BUFFER_SIZE)
+    sig.close()
+    client_sig_socket.close()
+    
+    logging.info("Signature Sent!")
+
+
 def service_message(msg, client_socket, db_conn):
 
-    global tempdelFiles, tempFiles, tempmvFiles, locked, conflict
+    global tempdelFiles, tempFiles, tempmvFiles, locked, conflict, delreq
 
     if db_conn is None:
         db_conn = pm.open_db()
@@ -109,10 +131,56 @@ def service_message(msg, client_socket, db_conn):
 
         
     if msg_code == pm.msgCode.SENDSIG:
+        
         #compute delta and send
-        logging.info("Sync-ing and uploading %s", file_name)
-        msg = pm.get_senddel_msg(client_id,file_name,data,db_conn)
+        
+        sig_socket = socket.socket()
+        addr = ('', pm.SharedPort.client_sig_port)
+        sig_socket.bind(addr)
+        #print "Client sig socket is ready at: {}".format(data_socket.getsockname())
+        sig_socket.listen(10)
+        server_sig_sock, addr = sig_socket.accept()
+        
+        # Receive Signature
+        sigdata = ""
+        while True:
+            data = server_sig_sock.recv(BUFFER_SIZE)
+            sigdata += data
+            if not data:
+                break
+        
+        server_sig_sock.close()
+        sig_socket.close()
+        
+        logging.info("Signature Received!")
+        # logging.info("Sync-ing and uploading %s", file_name)
+
+        # send SENDDEL msg 
+        msg = pm.get_senddel_msg(client_id,file_name,db_conn)
         client_socket.send(msg)
+
+        signature = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
+        signature.write(sigdata)
+        signature.seek(0)
+        src = open(file_name, 'rb')
+        delta = sync.delta(src,signature)        
+        delta.seek(0)
+        # connect to delta socket
+
+        client_del_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        wait_net_service(client_del_socket, SERVER_IP ,pm.SharedPort.server_del_port)
+
+        # send delta
+
+        l = delta.read(BUFFER_SIZE)
+        while l:
+            client_del_socket.send(l)
+            l = delta.read(BUFFER_SIZE)
+        delta.close()
+    
+        client_del_socket.close()
+        logging.info("Delta Sent!")
+
         return 1
         
     if msg_code == pm.msgCode.REQSIG:
@@ -120,14 +188,36 @@ def service_message(msg, client_socket, db_conn):
         # next update : create a data socket to send large signature
         msg = pm.get_sensig_msg(client_id,file_name,db_conn)
         client_socket.send(msg)
+        send_signature(file_name)
+        
         return 1
 
     if msg_code == pm.msgCode.SENDDEL:
         
-        # next update : create a data socket to recieve large delta
-        # received delta
+        # receive delta
+
+        del_socket = socket.socket()
+        addr = ('', pm.SharedPort.client_del_port)
+        del_socket.bind(addr)
+        #print "Client del socket is ready at: {}".format(data_socket.getsockname())
+        del_socket.listen(10)
+        client_del_sock, addr = del_socket.accept()
+        
+        # Receive Signature
+        deldata = ""
+        while True:
+            data = client_del_sock.recv(BUFFER_SIZE)
+            deldata += data
+            if not data:
+                break
+        
+        client_del_sock.close()
+        del_socket.close()
+        
+        logging.info("Delta has been received!")
+
         delta = tempfile.SpooledTemporaryFile(max_size=MAX_SPOOL, mode='wb+')
-        delta.write(data)
+        delta.write(deldata)
         delta.seek(0)
 
         ### Ask to Merge 
@@ -145,12 +235,15 @@ def service_message(msg, client_socket, db_conn):
                 return 1
         
         
-
         dest = open(file_name,'rb')
         synced_file = open(file_name,'wb')
         sync.patch(dest,delta,synced_file)      # patch the delta
         synced_file.close()
-        print file_name, "Updation Successful"
+
+        # crucial for 2 opens
+        tempFiles.append(file_name)
+        tempFiles.append(file_name)
+        logging.info("Updation Successful for file %s", file_name)
 
         pm.update_db(db_conn,file_name,"client_m_time",os.path.getmtime(file_name))
         db_conn.commit()
@@ -158,7 +251,6 @@ def service_message(msg, client_socket, db_conn):
         ret_msg = pm.get_sendcmt_msg(client_id,file_name,db_conn)
         #logging.info("returning msg for updating SMT: %s",ret_msg)
         client_socket.send(ret_msg)
-        tempFiles.append(file_name)
         return 1
 
 
@@ -191,14 +283,17 @@ def service_message(msg, client_socket, db_conn):
         
         with open(file_name, 'wb') as f:
             while True:
-                data = client_data_sock.recv(1000)
+                data = client_data_sock.recv(BUFFER_SIZE)
                 if not data:
                     break
                 f.write(data)
             f.close()
+        
+        tempFiles.append(file_name)
         logging.info("file recieved: %s",file_name)
         client_data_sock.close()
         data_socket.close()
+
         return 1
         
 
@@ -221,9 +316,9 @@ def service_message(msg, client_socket, db_conn):
                     conflict[file_name] = 1
                     return 0
                 
-                tempFiles.append(file_name)
                 msg = pm.get_sensig_msg(client_id,file_name,db_conn)
                 client_socket.send(msg)
+                send_signature(file_name)
                 return 1
             
             elif s_server_m_time == c_server_m_time:
@@ -236,7 +331,6 @@ def service_message(msg, client_socket, db_conn):
         else :
             # send a request to send the total file
             logging.info("Requesting File: %s",file_name)
-            tempFiles.append(file_name)
             sm_time, cm_time = data.split('<##>')
             #print "timestamp", sm_time, cm_time
             pm.update_db(db_conn,file_name,"client_m_time",cm_time)
@@ -248,6 +342,12 @@ def service_message(msg, client_socket, db_conn):
 
 
     if msg_code == pm.msgCode.DELREQ:
+
+        if file_name in locked and locked[file_name] == 1:
+            print "CONFLICT : Local copy is currently being modified! Server action cannot be done!"
+            delreq[file_name] = 1
+            return 0
+        
         os.remove(file_name)
         pm.delete_record(db_conn,file_name)
         db_conn.commit()
@@ -298,7 +398,6 @@ def server_sync(db_conn, client_id, client_socket):
     
     #logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
     while pm.SharedPort.client_sync_port_used:
-        #time.sleep(5)
         continue
 
     pm.SharedPort.client_sync_port_used = True
@@ -327,11 +426,6 @@ def server_sync(db_conn, client_id, client_socket):
     pm.SharedPort.client_sync_port_used = False
     logging.info("All file synced with server!")
     
-
-
-# def server_sync_daemon(db_conn, client_id, client_socket):
-#     threading.Timer(60.0,server_sync_daemon,(db_conn, client_id, client_socket)).start()
-#     server_sync(db_conn, client_id, client_socket)    
     
 def updation_on_change(db_conn, client_socket, client_id):
     """
@@ -353,7 +447,7 @@ def updation_on_change(db_conn, client_socket, client_id):
             if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                 continue
             total_file_name = path + '/' + filename
-            #print type_names, total_file_name 
+            print type_names, total_file_name 
 
             if 'IN_MODIFY' in type_names:
 
@@ -364,6 +458,7 @@ def updation_on_change(db_conn, client_socket, client_id):
 
                 # for updation and new creation of files
                 locked[total_file_name] = 0
+                
                 if total_file_name in conflict and conflict[total_file_name] == 1:
                     print "CONFLICT : Server copy of " + total_file_name + " has been modified!"
                     # remove local copy and download the latest server copy
@@ -374,7 +469,15 @@ def updation_on_change(db_conn, client_socket, client_id):
                     client_socket.send(msg)
                     continue
 
-                if total_file_name in tempFiles:    # just downloaded or pathced files
+                if total_file_name in delreq and delreq[total_file_name] == 1:
+                    os.remove(total_file_name)
+                    pm.delete_record(db_conn,total_file_name)
+                    db_conn.commit()
+                    tempdelFiles.append(total_file_name)
+                    delreq[total_file_name] = 0
+
+                if total_file_name in tempFiles:    # just downloaded or patched files
+                    logging.info("%s is just downloaded or patched!", total_file_name)
                     tempFiles.remove(total_file_name)
                     continue
                 
@@ -404,17 +507,19 @@ def updation_on_change(db_conn, client_socket, client_id):
                 
 
             if 'IN_MOVED_FROM' in type_names:
+
                 src_file = total_file_name
             
             if 'IN_MOVED_TO' in type_names:
-                dest_file = total_file_name
                 
+                dest_file = total_file_name
                 if total_file_name in tempmvFiles:
                     tempmvFiles.remove(total_file_name)
                     continue
 
                 if src_file is None:
                     continue
+
                 pm.update_db_filename(db_conn, src_file, dest_file)
                 db_conn.commit()
                 logging.info("Renaming filename %s to %s", src_file, total_file_name)
