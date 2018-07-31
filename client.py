@@ -25,6 +25,7 @@ tempmvFiles = []
 locked = {}
 conflict = {}
 delreq = {}
+mvreq = {}
 
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
@@ -96,7 +97,7 @@ def send_signature(file_name):
 
 def service_message(msg, client_socket, db_conn):
 
-    global tempdelFiles, tempFiles, tempmvFiles, locked, conflict, delreq
+    global tempdelFiles, tempFiles, tempmvFiles, locked, conflict, delreq, mvreq
     global SERVER_IP
 
     if db_conn is None:
@@ -351,15 +352,24 @@ def service_message(msg, client_socket, db_conn):
         
         if os.path.exists(file_name):
             tempdelFiles.append(file_name)
+
+            if os.path.isdir(file_name):    # if directory
+                os.rmdir(file_name)
+                return 0
+
             os.remove(file_name)
             pm.delete_record(db_conn,file_name)
             db_conn.commit()
 
-            logging.info("%s has been deleted successfully!", file_name)
-
+        logging.info("%s has been deleted successfully!", file_name)
         return 0
 
     if msg_code == pm.msgCode.MVREQ:
+        
+        if file_name in locked and locked[file_name] == 1:
+            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
+            mvreq[file_name] = 1
+            return 0
         
         #old filename = data
         if os.path.exists(data):
@@ -470,7 +480,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                 # for updation and new creation of files
                 
                 locked[total_file_name] = 0
-                if total_file_name in conflict and conflict[total_file_name] == 1:
+                if (total_file_name in conflict and conflict[total_file_name] == 1) or (total_file_name in mvreq and mvreq[total_file_name] == 1):
                     print pm.bcolors.WARNING + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
                     # remove local copy and download the latest server copy
                     print pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC
@@ -481,6 +491,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                     msg = pm.get_resend_msg(client_id,total_file_name)
                     client_socket.send(msg)
                     conflict[total_file_name] == 0
+                    mvreq[total_file_name] == 0
                     continue
 
                 if total_file_name in delreq and delreq[total_file_name] == 1:
@@ -489,6 +500,8 @@ def updation_on_change(db_conn, client_socket, client_id):
                     pm.delete_record(db_conn,total_file_name)
                     db_conn.commit()
                     delreq[total_file_name] = 0
+                
+
 
                 if total_file_name in tempFiles:    # just downloaded or patched files
                     logging.info("%s is just downloaded or patched!", total_file_name)

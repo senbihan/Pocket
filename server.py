@@ -394,6 +394,11 @@ def service_message(msg, client, addr, db_conn, flag):
 
         if os.path.exists(file_name):
             logging.info("Deleting %s", file_name)
+            
+            if os.path.isdir(file_name):    # if directory
+                os.rmdir(file_name)
+                return 1
+
             os.remove(file_name)
             pm.delete_record(db_conn,file_name)
             db_conn.commit()
@@ -402,6 +407,7 @@ def service_message(msg, client, addr, db_conn, flag):
                 if acclients is not client and client_id != client_dict[acclients]:
                     msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
                     acclients.send(msg)
+        
         else:
             print pm.bcolors.FAIL + file_name + " doesnot exist " + pm.bcolors.ENDC
         return 1

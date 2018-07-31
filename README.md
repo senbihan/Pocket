@@ -37,6 +37,11 @@ run `$sudo python setup.py install` to install the python wrappers.
 
 **Running**
 
+This software has following assumptions: <br/>
+      1. The contents of the user directory can only be modified when the application is running.<br/>
+      2. Different clients follow same timezone since they belong to same user.<br/>
+      3. Clients must run on different machines as suggested by name. 
+
 ##### Running Server<br/>
 
 <img src='images/server.png' width = 800>
