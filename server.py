@@ -122,6 +122,11 @@ def recieve_delta_and_patch(file_name):
 
 def recieve_signature_and_send_delta(client_id, client, ip, file_name, db_conn):
 
+    while pm.SharedPort.server_sig_port_used :
+        continue
+    
+    pm.SharedPort.server_sig_port_used = True
+
     sig_socket = socket.socket()
     address = ('', pm.SharedPort.server_sig_port)
     sig_socket.bind(address)
@@ -140,6 +145,7 @@ def recieve_signature_and_send_delta(client_id, client, ip, file_name, db_conn):
     client_sig_sock.close()
     sig_socket.close()
     
+    pm.SharedPort.server_sig_port_used = False
     logging.info("Signature Received!")
     # logging.info("Sync-ing and uploading %s", file_name)
 

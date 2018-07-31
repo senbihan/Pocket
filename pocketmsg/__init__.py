@@ -23,11 +23,12 @@ class SharedPort:
     client_listner_port = 10054
     client_sig_port = 10062
     server_del_port = 10059
-    server_sig_port = 10050
+    server_sig_port = 10074
     client_del_port = 10061
 
     client_port_used = False
     server_port_used = False
+    server_sig_port_used = False
     client_sync_port_used = False
 
 class msgCode:
