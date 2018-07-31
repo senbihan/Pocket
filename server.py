@@ -9,9 +9,8 @@ import time
 import traceback
 import librsync as sync
 import tempfile
+import shutil
 
-
-sh_completed = 0
 MAX_SPOOL = 1024 ** 2 * 5
 BUFFER_SIZE =  1024
 C_DATA_SOCK_PORT = pm.SharedPort.client_port
@@ -40,7 +39,6 @@ def wait_net_service(s, server, port, timeout=None):
     """
     import errno
 
-    # s = socket.socket()
     if timeout:
         from time import time as now
         # time module is needed to calc timeout shared between two exceptions
@@ -193,7 +191,7 @@ def service_message(msg, client, addr, db_conn, flag):
     '''
         Service msg as obtained from the client
     '''
-    global sh_completed, active_clients, client_dict
+    global active_clients, client_dict
 
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
     client_dict[client] = client_id
@@ -389,7 +387,6 @@ def service_message(msg, client, addr, db_conn, flag):
 
     if msg_code == pm.msgCode.SENDNOC:
         
-        sh_completed += 1
         return 0
     
     if msg_code == pm.msgCode.RESEND:
@@ -405,8 +402,8 @@ def service_message(msg, client, addr, db_conn, flag):
         if os.path.exists(file_name):
             logging.info("Deleting %s", file_name)
             
-            if os.path.isdir(file_name):    # if directory
-                os.rmdir(file_name)
+            if os.path.isdir(file_name):    # if directory, recursively delete all
+                shutil.rmtree(file_name)
             else:
                 os.remove(file_name)
                 pm.delete_record(db_conn,file_name)
@@ -419,7 +416,7 @@ def service_message(msg, client, addr, db_conn, flag):
                     acclients.send(msg)
         
         else:
-            print pm.bcolors.FAIL + file_name + " doesnot exist " + pm.bcolors.ENDC
+            print pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC
         return 1
 
     if msg_code == pm.msgCode.MVREQ:
@@ -439,7 +436,7 @@ def service_message(msg, client, addr, db_conn, flag):
                     msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
                     acclients.send(msg)
         else:
-            print pm.bcolors.FAIL + file_name + " doesnot exist " + pm.bcolors.ENDC
+            print pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC
         
         return 1
 
@@ -507,7 +504,7 @@ def handle_request(client, addr, db_conn, flag = False):
 
 def _main():
 
-    global active_clients
+    global active_clients, logo
     # create a server socket
     if len(sys.argv) != 2:
         print pm.bcolors.FAIL + "usage: python server.py [dirname]" + pm.bcolors.ENDC

@@ -12,6 +12,7 @@ from threading import Thread
 import threading
 import librsync as sync
 import tempfile
+import shutil
 
 
 BUFFER_SIZE     =   1024
@@ -229,7 +230,7 @@ def service_message(msg, client_socket, db_conn):
         db_m_time = pm.get_data(db_conn,file_name, "client_m_time")
         
         if last_m_time > db_m_time:
-            print pm.bcolors.WARNING + "WARNING!"
+            print pm.bcolors.FAIL + "WARNING!"
             print file_name ," has changed since last update. Do you want to merge server's update? [Y|N]"
             print "Local updates will be lost if you select 'Yes'" + pm.bcolors.ENDC
             ans = raw_input()
@@ -277,7 +278,7 @@ def service_message(msg, client_socket, db_conn):
                 os.mkdir(dname)
 
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
+            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
             conflict[file_name] = 1
             client_data_sock.close()
             data_socket.close()
@@ -314,7 +315,7 @@ def service_message(msg, client_socket, db_conn):
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
                 if file_name in locked and locked[file_name] == 1:
-                    print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
+                    print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
                     conflict[file_name] = 1
                     return 0
                 
@@ -346,7 +347,7 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.DELREQ:
 
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
+            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
             delreq[file_name] = 1
             return 0
         
@@ -354,7 +355,7 @@ def service_message(msg, client_socket, db_conn):
             tempdelFiles.append(file_name)
 
             if os.path.isdir(file_name):    # if directory
-                os.rmdir(file_name)
+                shutil.rmtree(file_name)
 
             else:
                 os.remove(file_name)
@@ -367,7 +368,7 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.MVREQ:
         
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
+            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
             mvreq[file_name] = 1
             return 0
         
@@ -484,7 +485,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                 
                 locked[total_file_name] = 0
                 if (total_file_name in conflict and conflict[total_file_name] == 1) or (total_file_name in mvreq and mvreq[total_file_name] == 1):
-                    print pm.bcolors.WARNING + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
+                    print pm.bcolors.FAIL + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
                     # remove local copy and download the latest server copy
                     print pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC
                     tempdelFiles.append(total_file_name)
