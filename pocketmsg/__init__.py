@@ -17,14 +17,14 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 class SharedPort:
-    client_port = 10001
-    server_port = 10002
-    client_sync_port = 10012
-    client_listner_port = 10004
-    client_sig_port = 10012
-    server_del_port = 10009
-    server_sig_port = 10010
-    client_del_port = 10011
+    client_port = 10051
+    server_port = 10052
+    client_sync_port = 10062
+    client_listner_port = 10054
+    client_sig_port = 10062
+    server_del_port = 10059
+    server_sig_port = 10050
+    client_del_port = 10061
 
     client_port_used = False
     server_port_used = False

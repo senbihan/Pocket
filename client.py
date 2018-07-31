@@ -349,10 +349,10 @@ def service_message(msg, client_socket, db_conn):
             return 0
         
         if os.path.exists(file_name):
+            tempdelFiles.append(file_name)
             os.remove(file_name)
             pm.delete_record(db_conn,file_name)
             db_conn.commit()
-            tempdelFiles.append(file_name)
 
         return 0
 
@@ -467,20 +467,20 @@ def updation_on_change(db_conn, client_socket, client_id):
                     print pm.bcolors.WARNING + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
                     # remove local copy and download the latest server copy
                     print pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC
+                    tempdelFiles.append(total_file_name)
                     os.remove(total_file_name)
                     pm.delete_record(db_conn,total_file_name)
                     db_conn.commit()
-                    tempdelFiles.append(total_file_name)
                     msg = pm.get_resend_msg(client_id,total_file_name)
                     client_socket.send(msg)
                     conflict[total_file_name] == 0
                     continue
 
                 if total_file_name in delreq and delreq[total_file_name] == 1:
+                    # tempdelFiles.append(total_file_name)
                     os.remove(total_file_name)
                     pm.delete_record(db_conn,total_file_name)
                     db_conn.commit()
-                    tempdelFiles.append(total_file_name)
                     delreq[total_file_name] = 0
 
                 if total_file_name in tempFiles:    # just downloaded or patched files
