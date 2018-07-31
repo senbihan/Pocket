@@ -192,6 +192,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
     if msg_code == pm.msgCode.CREQ:
         # request to sync
+        logging.info("CREQ Received")
         if os.path.exists(file_name) is True:
 
             c_server_m_time, c_client_m_time = data.split('<##>')
@@ -307,7 +308,8 @@ def service_message(msg, client, addr, db_conn, flag):
     if msg_code == pm.msgCode.SENDDAT: 
         
         #create a new socket and send the data via it
-        
+        logging.info("recieved SENDDAT")
+
         while pm.SharedPort.server_port_used:
             continue
         
