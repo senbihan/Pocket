@@ -355,11 +355,11 @@ def service_message(msg, client_socket, db_conn):
 
             if os.path.isdir(file_name):    # if directory
                 os.rmdir(file_name)
-                return 0
 
-            os.remove(file_name)
-            pm.delete_record(db_conn,file_name)
-            db_conn.commit()
+            else:
+                os.remove(file_name)
+                pm.delete_record(db_conn,file_name)
+                db_conn.commit()
 
         logging.info("%s has been deleted successfully!", file_name)
         return 0
@@ -374,11 +374,14 @@ def service_message(msg, client_socket, db_conn):
         #old filename = data
         if os.path.exists(data):
             os.rename(data,file_name)
-            pm.update_db_filename(db_conn,data,file_name)
-            db_conn.commit()
+            
+            if os.path.isdir(file_name) is False: 
+                pm.update_db_filename(db_conn,data,file_name)
+                db_conn.commit()
+            
             tempmvFiles.append(file_name)
 
-            logging.info("%s is renamed to %s",data,file_name)
+            logging.info("%s is renamed/moved to %s",data,file_name)
 
         return 0
 

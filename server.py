@@ -202,7 +202,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
     if msg_code == pm.msgCode.CREQ:
         # request to sync
-        logging.info("CREQ Received")
+        # logging.info("CREQ Received")
         if os.path.exists(file_name) is True:
 
             c_server_m_time, c_client_m_time = data.split('<##>')
@@ -407,11 +407,11 @@ def service_message(msg, client, addr, db_conn, flag):
             
             if os.path.isdir(file_name):    # if directory
                 os.rmdir(file_name)
-                return 1
-
-            os.remove(file_name)
-            pm.delete_record(db_conn,file_name)
-            db_conn.commit()
+            else:
+                os.remove(file_name)
+                pm.delete_record(db_conn,file_name)
+                db_conn.commit()
+            
             logging.info("Updating to other clients...")
             for acclients in active_clients:
                 if acclients is not client and client_id != client_dict[acclients]:
@@ -428,8 +428,11 @@ def service_message(msg, client, addr, db_conn, flag):
         if os.path.exists(data):
             logging.info("Renaming %s to %s",data,file_name)
             os.rename(data,file_name)
-            pm.update_db_filename(db_conn,data,file_name)
-            db_conn.commit()
+            
+            if os.path.isdir(file_name) is False:
+                pm.update_db_filename(db_conn,data,file_name)
+                db_conn.commit()
+
             logging.info("Updating to other clients...")
             for acclients in active_clients:
                 if acclients is not client and client_id != client_dict[acclients]:
