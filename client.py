@@ -227,9 +227,9 @@ def service_message(msg, client_socket, db_conn):
         db_m_time = pm.get_data(db_conn,file_name, "client_m_time")
         
         if last_m_time > db_m_time:
-            print "WARNING!"
+            print pm.bcolors.WARNING + "WARNING!"
             print file_name ," has changed since last update. Do you want to merge server's update? [Y|N]"
-            print "Local updates will be lost if you select 'Yes'"
+            print "Local updates will be lost if you select 'Yes'" + pm.bcolors.ENDC
             ans = raw_input()
             if ans == 'n' or ans == 'N':
                 return 1
@@ -275,7 +275,7 @@ def service_message(msg, client_socket, db_conn):
                 os.mkdir(dname)
 
         if file_name in locked and locked[file_name] == 1:
-            print "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!"
+            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
             conflict[file_name] = 1
             client_data_sock.close()
             data_socket.close()
@@ -312,7 +312,7 @@ def service_message(msg, client_socket, db_conn):
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
                 if file_name in locked and locked[file_name] == 1:
-                    print "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!"
+                    print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
                     conflict[file_name] = 1
                     return 0
                 
@@ -344,21 +344,25 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.DELREQ:
 
         if file_name in locked and locked[file_name] == 1:
-            print "CONFLICT : Local copy is currently being modified! Server action cannot be done!"
+            print pm.bcolors.WARNING + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
             delreq[file_name] = 1
             return 0
         
-        os.remove(file_name)
-        pm.delete_record(db_conn,file_name)
-        db_conn.commit()
-        tempdelFiles.append(file_name)
+        if os.path.exists(file_name):
+            os.remove(file_name)
+            pm.delete_record(db_conn,file_name)
+            db_conn.commit()
+            tempdelFiles.append(file_name)
+
         return 0
 
     if msg_code == pm.msgCode.MVREQ:
-        os.rename(data,file_name)
-        pm.update_db_filename(db_conn,data,file_name)
-        db_conn.commit()
-        tempmvFiles.append(file_name)
+        
+        if os.path.exists(file_name):
+            os.rename(data,file_name)
+            pm.update_db_filename(db_conn,data,file_name)
+            db_conn.commit()
+            tempmvFiles.append(file_name)
         return 0
 
     if msg_code == pm.msgCode.CONFLICT:
@@ -393,7 +397,7 @@ def server_sync(db_conn, client_id, client_socket):
 
     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
     client_socket.send(msg)
-    print "Sync-ing with server... Please wait... This may take a while..."
+    print pm.bcolors.OKBLUE + "Sync-ing with server... Please wait... This may take a while..." + pm.bcolors.ENDC
     # now this becomes a server
     
     #logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
@@ -434,7 +438,7 @@ def updation_on_change(db_conn, client_socket, client_id):
 
     global locked
 
-    print "Notifier started..."
+    print pm.bcolors.OKGREEN + "Notifier started..." + pm.bcolors.ENDC
     # add notifier to watch
     notifier = inotify.adapters.InotifyTree('.')
     src_file = None
@@ -447,7 +451,7 @@ def updation_on_change(db_conn, client_socket, client_id):
             if filename and filename[0] == '.': # .goutputstream-ZC9VLZ
                 continue
             total_file_name = path + '/' + filename
-            print type_names, total_file_name 
+            # print type_names, total_file_name 
 
             if 'IN_MODIFY' in type_names:
 
@@ -457,16 +461,19 @@ def updation_on_change(db_conn, client_socket, client_id):
             if 'IN_CLOSE_WRITE' in type_names:
 
                 # for updation and new creation of files
-                locked[total_file_name] = 0
                 
+                locked[total_file_name] = 0
                 if total_file_name in conflict and conflict[total_file_name] == 1:
-                    print "CONFLICT : Server copy of " + total_file_name + " has been modified!"
+                    print pm.bcolors.WARNING + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
                     # remove local copy and download the latest server copy
-                    print "Server copy is being prioritized"
+                    print pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC
                     os.remove(total_file_name)
-                    msg = pm.get_resend_msg(client_id,total_file_name)
                     pm.delete_record(db_conn,total_file_name)
+                    db_conn.commit()
+                    tempdelFiles.append(total_file_name)
+                    msg = pm.get_resend_msg(client_id,total_file_name)
                     client_socket.send(msg)
+                    conflict[total_file_name] == 0
                     continue
 
                 if total_file_name in delreq and delreq[total_file_name] == 1:
@@ -549,10 +556,10 @@ def _main():
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_address = (SERVER_IP,SERVER_PORT)
-    print "connecting to Pocket File Server {}".format(server_address)
+    print pm.bcolors.OKBLUE + "connecting to Pocket File Server {}".format(server_address) + pm.bcolors.ENDC
     client_socket.connect(server_address)
 
-    print "[+] Connected to Pocket File Server."
+    print pm.bcolors.OKGREEN + "[+] Connected to Pocket File Server." + pm.bcolors.ENDC
 
     try:
         #sync serverfiles

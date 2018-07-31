@@ -6,10 +6,20 @@ import tempfile
 MAX_FILE_LEN = 50
 MAX_SPOOL = 1024 ** 2 * 5
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 class SharedPort:
     client_port = 10001
     server_port = 10002
-    client_sync_port = 10003
+    client_sync_port = 10012
     client_listner_port = 10004
     client_sig_port = 10012
     server_del_port = 10009

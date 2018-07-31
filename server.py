@@ -385,27 +385,34 @@ def service_message(msg, client, addr, db_conn, flag):
     if msg_code == pm.msgCode.DELREQ:
 
         if os.path.exists(file_name):
+            logging.info("Deleting %s", file_name)
             os.remove(file_name)
             pm.delete_record(db_conn,file_name)
             db_conn.commit()
+            logging.info("Updating to other clients...")
             for acclients in active_clients:
                 if acclients is not client:
                     msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
                     acclients.send(msg)
-            
+        else:
+            print pm.bcolors.FAIL + file_name + " doesnot exist " + pm.bcolors.ENDC
         return 1
 
     if msg_code == pm.msgCode.MVREQ:
         
         # data = old file name
         if os.path.exists(data):
+            logging.info("Renaming %s to %s",data,file_name)
             os.rename(data,file_name)
             pm.update_db_filename(db_conn,data,file_name)
             db_conn.commit()
+            logging.info("Updating to other clients...")
             for acclients in active_clients:
                 if acclients is not client:
                     msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
                     acclients.send(msg)
+        else:
+            print pm.bcolors.FAIL + file_name + " doesnot exist " + pm.bcolors.ENDC
         
         return 1
 
@@ -476,12 +483,12 @@ def _main():
     global active_clients
     # create a server socket
     if len(sys.argv) != 2:
-        print "usage: python server.py [dirname]"    
+        print pm.bcolors.FAIL + "usage: python server.py [dirname]" + pm.bcolors.ENDC
     os.chdir(sys.argv[1])
     server = socket.socket()
     addr = ('', 0)
     server.bind(addr)
-    print "Pocket Server Started at : {}".format(server.getsockname())
+    print pm.bcolors.OKGREEN + "Pocket Server Started at : {}".format(server.getsockname()) + pm.bcolors.ENDC
     db_conn = pm.open_db()
     pm.create_table(db_conn)
     server.listen(20)
@@ -493,7 +500,7 @@ def _main():
         client, addr = server.accept()
         if client not in active_clients:
             active_clients.append(client)
-        logging.info("[+] getting connection from %s",addr)
+        print pm.bcolors.OKGREEN + "[+] getting connection from " + str(addr) + pm.bcolors.ENDC
         thread.start_new_thread(handle_request,(client,addr,db_conn, False))
     
     server.close()
