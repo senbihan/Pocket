@@ -250,7 +250,6 @@ def service_message(msg, client, addr, db_conn, flag):
             ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
             #logging.info("returing msg for requesting data: %s",ret_msg)
             client.send(ret_msg)
-            #time.sleep(5) 
             return 1 
 
     if msg_code == pm.msgCode.REQTOT:
@@ -312,6 +311,7 @@ def service_message(msg, client, addr, db_conn, flag):
         address = ('', S_DATA_SOCK_PORT)
         data_socket.bind(address)
         #print "Server data socket is ready at: {}".format(data_socket.getsockname())
+        logging.info("Server data socket Ready!")
         data_socket.listen(10)
         client_data_sock, addr = data_socket.accept()
 
@@ -348,7 +348,7 @@ def service_message(msg, client, addr, db_conn, flag):
         #print client_dict
         for acclients in active_clients:
             if acclients != client and client_id != client_dict[acclients]:
-                #logging.debug("sending SREQ to client %s",client_dict[acclients])
+                logging.debug("sending SREQ to client %s",client_dict[acclients])
                 msg = pm.get_sreq_msg(client_dict[acclients],file_name,db_conn)
                 acclients.send(msg)
         

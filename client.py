@@ -97,7 +97,8 @@ def send_signature(file_name):
 def service_message(msg, client_socket, db_conn):
 
     global tempdelFiles, tempFiles, tempmvFiles, locked, conflict, delreq
-
+    global SERVER_IP
+    
     if db_conn is None:
         db_conn = pm.open_db()
 
@@ -110,7 +111,7 @@ def service_message(msg, client_socket, db_conn):
         
         client_data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         #logging.debug("waiting for data socket to be ready..")
-        wait_net_service(client_data_socket,SERVER_IP,S_DATA_SOCK_PORT, 10)
+        wait_net_service(client_data_socket,SERVER_IP,S_DATA_SOCK_PORT)
         #client_data_socket.connect(server_data_address)
         #logging.debug("Connected")
         with open(file_name, 'rb') as f:
@@ -541,6 +542,7 @@ def updation_on_change(db_conn, client_socket, client_id):
 def _main():
     
     global tempFiles, tempdelFiles, tempmvFiles
+    global SERVER_IP
 
     if len(sys.argv) != 5:
         print USAGE_MESG

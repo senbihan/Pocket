@@ -18,7 +18,7 @@ class bcolors:
 
 class SharedPort:
     client_port = 10051
-    server_port = 10052
+    server_port = 10090
     client_sync_port = 10062
     client_listner_port = 10054
     client_sig_port = 10062
