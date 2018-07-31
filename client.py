@@ -98,7 +98,7 @@ def service_message(msg, client_socket, db_conn):
 
     global tempdelFiles, tempFiles, tempmvFiles, locked, conflict, delreq
     global SERVER_IP
-    
+
     if db_conn is None:
         db_conn = pm.open_db()
 
@@ -355,15 +355,21 @@ def service_message(msg, client_socket, db_conn):
             pm.delete_record(db_conn,file_name)
             db_conn.commit()
 
+            logging.info("%s has been deleted successfully!", file_name)
+
         return 0
 
     if msg_code == pm.msgCode.MVREQ:
         
-        if os.path.exists(file_name):
+        #old filename = data
+        if os.path.exists(data):
             os.rename(data,file_name)
             pm.update_db_filename(db_conn,data,file_name)
             db_conn.commit()
             tempmvFiles.append(file_name)
+
+            logging.info("%s is renamed to %s",data,file_name)
+
         return 0
 
     if msg_code == pm.msgCode.CONFLICT:

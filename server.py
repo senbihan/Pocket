@@ -399,7 +399,7 @@ def service_message(msg, client, addr, db_conn, flag):
             db_conn.commit()
             logging.info("Updating to other clients...")
             for acclients in active_clients:
-                if acclients is not client:
+                if acclients is not client and client_id != client_dict[acclients]:
                     msg = pm.get_delreq_msg(client_dict[acclients],file_name,db_conn)
                     acclients.send(msg)
         else:
@@ -416,7 +416,7 @@ def service_message(msg, client, addr, db_conn, flag):
             db_conn.commit()
             logging.info("Updating to other clients...")
             for acclients in active_clients:
-                if acclients is not client:
+                if acclients is not client and client_id != client_dict[acclients]:
                     msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
                     acclients.send(msg)
         else:
