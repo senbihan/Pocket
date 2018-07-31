@@ -8,12 +8,13 @@ pocket is small dropbox-like client that keeps your files synced. This is a coll
 **Current Features**
 
 1. Upload files from local machine to server that are not present.
-2. Synchronise existing files with the server.
+2. Real-time synchronisation of existing files with the server. (updation, deletion, rename etc.)
+3. Single user multi-client support.
 
-**Features to be Added**
 
-1. Single user multi-client support
-2. Multiple user support.
+**Features that can be Added**
+
+1. Multiple user support.
 
 **Dependency:**
 
@@ -34,6 +35,19 @@ To Run, Test you need these :
 Otherwise, you can install librsync and inotify library and then            
 run `$sudo python setup.py install` to install the python wrappers.
 
+**Running**
+
+##### Running Server<br/>
+
+<img src='images/server.png' width = 800>
+
+
+##### Running Client<br/>
+
+<img src='images/client_one.png' width = 800>
+
+
+****
 **Credits**
 
 Credits for the open-source library used in this project:<br/>
