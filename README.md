@@ -2,7 +2,7 @@
 
 **Introduction**:
 
-pocket is small dropbox-like client that keeps your files synced. This is a collaborative class project of Operating Subject Indian Statistical Institute, Kolkata for M.Tech CS Batch 2017-19.
+pocket is small dropbox-like client that keeps your files synced. This is a collaborative class project of Operating Systems from Indian Statistical Institute, Kolkata for M.Tech CS Batch 2017-19.
 
 ****
 **Current Features**
@@ -14,11 +14,11 @@ pocket is small dropbox-like client that keeps your files synced. This is a coll
 
 **Features that can be Added**
 
-1. Multiple user support.
+1. Multiple user support. (To be added later)
 
 **Dependency:**
 
-To Run, Test you need these :
+To Run and test you need these :
 
 1. librsync :
      >For Debian/Ubuntu<br/>
@@ -32,7 +32,7 @@ To Run, Test you need these :
       1. run `sudo apt-get install inotify-tools`.   (for inotify library)      
       2. run `sudo pip install inotify`  .   (for python wrapper)
 
-Otherwise, you can install librsync and inotify library and then            
+Otherwise, you can install `librsync` and `inotify` library and then            
 run `$sudo python setup.py install` to install the python wrappers.
 
 **Running**
@@ -55,6 +55,6 @@ This software has following assumptions: <br/>
 ****
 **Credits**
 
-Credits for the open-source library used in this project:<br/>
+The open-source libraries used in this project:<br/>
 https://github.com/dsoprea/PyInotify    (pynotify)<br/>
 https://github.com/smartfile/python-librsync    (librsync)
