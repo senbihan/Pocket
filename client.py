@@ -493,17 +493,19 @@ def updation_on_change(db_conn, client_socket, client_id):
                     db_conn.commit()
                     msg = pm.get_resend_msg(client_id,total_file_name)
                     client_socket.send(msg)
-                    conflict[total_file_name] == 0
-                    mvreq[total_file_name] == 0
+                    if total_file_name in conflict:
+                        conflict[total_file_name] = 0 
+                    if total_file_name in mvreq:
+                        mvreq[total_file_name] = 0
                     continue
 
                 if total_file_name in delreq and delreq[total_file_name] == 1:
-                    # tempdelFiles.append(total_file_name)
+                    tempdelFiles.append(total_file_name)
                     os.remove(total_file_name)
                     pm.delete_record(db_conn,total_file_name)
                     db_conn.commit()
                     delreq[total_file_name] = 0
-                
+                    continue
 
 
                 if total_file_name in tempFiles:    # just downloaded or patched files
