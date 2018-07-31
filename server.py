@@ -19,6 +19,16 @@ S_DATA_SOCK_PORT = pm.SharedPort.server_port
 active_clients = []
 client_dict = {}
 
+logo = """
+                          _____           _        _   
+                         |  __ \         | |      | |  
+                         | |__) |__   ___| | _____| |_ 
+                         |  ___/ _ \ / __| |/ / _ \ __|
+                         | |  | (_) | (__|   <  __/ |_ 
+                         |_|   \___/ \___|_|\_\___|\__|
+
+    """
+
 
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(message)s')
 
@@ -502,6 +512,7 @@ def _main():
     server = socket.socket()
     addr = ('', 0)
     server.bind(addr)
+    print logo
     print pm.bcolors.OKGREEN + "Pocket Server Started at : {}".format(server.getsockname()) + pm.bcolors.ENDC
     db_conn = pm.open_db()
     pm.create_table(db_conn)
