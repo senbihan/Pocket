@@ -5,8 +5,9 @@ import getpass
 import inotify.adapters
 import time
 import pocketmsg as pm
+from pocketmsg.dboperations import *
+import _thread
 import logging
-import thread
 import traceback
 from threading import Thread
 import threading
@@ -27,6 +28,7 @@ locked = {}
 conflict = {}
 delreq = {}
 mvreq = {}
+encoding = 'utf8'
 
 USAGE_MESG      = '''Pocket : A simple fileserver synced with your local directories
 
@@ -60,12 +62,12 @@ def wait_net_service(s, server, port, timeout=None):
             
             s.connect((server, port))
         
-        except socket.timeout, err:
+        except socket.timeout:
             # this exception occurs only if timeout is set
             if timeout:
                 return False
       
-        except socket.error, err:
+        except socket.error:
             # catch timeout exception from underlying network library
             # this one is different from socket.timeout
             if type(err.args) != tuple or err[0] != errno.ETIMEDOUT:
@@ -102,7 +104,7 @@ def service_message(msg, client_socket, db_conn):
     global SERVER_IP
 
     if db_conn is None:
-        db_conn = pm.open_db()
+        db_conn = open_db()
 
     msg_code, client_id, file_name, data = msg.split(pm.msgCode.delim)
 
@@ -128,7 +130,7 @@ def service_message(msg, client_socket, db_conn):
 
     if msg_code == pm.msgCode.SENDSMT:
         #logging.info("updating server_m_time of %s to %s",file_name,data)
-        pm.update_db(db_conn,file_name,"server_m_time",data)
+        update_db(db_conn,file_name,"server_m_time",data)
         db_conn.commit()
         return 0
 
@@ -147,7 +149,7 @@ def service_message(msg, client_socket, db_conn):
         # Receive Signature
         sigdata = ""
         while True:
-            data = server_sig_sock.recv(BUFFER_SIZE)
+            data = server_sig_sock.recv(BUFFER_SIZE).decode()
             sigdata += data
             if not data:
                 break
@@ -209,7 +211,7 @@ def service_message(msg, client_socket, db_conn):
         # Receive Signature
         deldata = ""
         while True:
-            data = client_del_sock.recv(BUFFER_SIZE)
+            data = client_del_sock.recv(BUFFER_SIZE).decode()
             deldata += data
             if not data:
                 break
@@ -227,12 +229,12 @@ def service_message(msg, client_socket, db_conn):
         ### Hard to produce this case
         ### Happens when both updates are done at a same time instance 
         last_m_time = os.path.getmtime(file_name)
-        db_m_time = pm.get_data(db_conn,file_name, "client_m_time")
+        db_m_time = get_data(db_conn,file_name, "client_m_time")
         
         if last_m_time > db_m_time:
-            print pm.bcolors.FAIL + "WARNING!"
-            print file_name ," has changed since last update. Do you want to merge server's update? [Y|N]"
-            print "Local updates will be lost if you select 'Yes'" + pm.bcolors.ENDC
+            print(pm.bcolors.FAIL + "WARNING!")
+            print(file_name ," has changed since last update. Do you want to merge server's update? [Y|N]")
+            print("Local updates will be lost if you select 'Yes'" + pm.bcolors.ENDC)
             ans = raw_input()
             if ans == 'n' or ans == 'N':
                 return 1
@@ -278,7 +280,7 @@ def service_message(msg, client_socket, db_conn):
                 os.mkdir(dname)
 
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
+            print(pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC)
             conflict[file_name] = 1
             client_data_sock.close()
             data_socket.close()
@@ -286,7 +288,7 @@ def service_message(msg, client_socket, db_conn):
         
         with open(file_name, 'wb') as f:
             while True:
-                data = client_data_sock.recv(BUFFER_SIZE)
+                data = client_data_sock.recv(BUFFER_SIZE).decode()
                 if not data:
                     break
                 f.write(data)
@@ -306,8 +308,8 @@ def service_message(msg, client_socket, db_conn):
         if os.path.exists(file_name) is True:
             # if server file exists in the client directory
             s_server_m_time, s_client_m_time = data.split('<##>')
-            c_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
-            c_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
+            c_client_m_time = get_data(db_conn,file_name,"client_m_time")
+            c_server_m_time = get_data(db_conn,file_name,"server_m_time")
 
             # print "server: server_m_time ", s_server_m_time, "client_m_time ", s_client_m_time
             # print "client: server_m_time ", c_server_m_time, "client_m_time ", c_client_m_time
@@ -315,7 +317,7 @@ def service_message(msg, client_socket, db_conn):
             if s_server_m_time > c_server_m_time:
                 # server has updated copy
                 if file_name in locked and locked[file_name] == 1:
-                    print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC
+                    print(pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server copy cannot be downloaded!" + pm.bcolors.ENDC)
                     conflict[file_name] = 1
                     return 0
                 
@@ -336,8 +338,8 @@ def service_message(msg, client_socket, db_conn):
             logging.info("Requesting File: %s",file_name)
             sm_time, cm_time = data.split('<##>')
             #print "timestamp", sm_time, cm_time
-            pm.update_db(db_conn,file_name,"client_m_time",cm_time)
-            pm.update_db(db_conn,file_name,"server_m_time",sm_time)
+            update_db(db_conn,file_name,"client_m_time",cm_time)
+            update_db(db_conn,file_name,"server_m_time",sm_time)
             db_conn.commit()
             msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
             client_socket.send(msg)
@@ -347,7 +349,7 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.DELREQ:
 
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
+            print(pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC)
             delreq[file_name] = 1
             return 0
         
@@ -359,7 +361,7 @@ def service_message(msg, client_socket, db_conn):
 
             else:
                 os.remove(file_name)
-                pm.delete_record(db_conn,file_name)
+                delete_record(db_conn,file_name)
                 db_conn.commit()
 
         logging.info("%s has been deleted successfully!", file_name)
@@ -368,7 +370,7 @@ def service_message(msg, client_socket, db_conn):
     if msg_code == pm.msgCode.MVREQ:
         
         if file_name in locked and locked[file_name] == 1:
-            print pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC
+            print(pm.bcolors.FAIL + "CONFLICT : Local copy is currently being modified! Server action cannot be done!" + pm.bcolors.ENDC)
             mvreq[file_name] = 1
             return 0
         
@@ -377,7 +379,7 @@ def service_message(msg, client_socket, db_conn):
             os.rename(data,file_name)
             
             if os.path.isdir(file_name) is False: 
-                pm.update_db_filename(db_conn,data,file_name)
+                update_db_filename(db_conn,data,file_name)
                 db_conn.commit()
             
             tempmvFiles.append(file_name)
@@ -388,7 +390,7 @@ def service_message(msg, client_socket, db_conn):
 
     if msg_code == pm.msgCode.CONFLICT:
         
-        print "The ", file_name , " is being accessed by some other client device! Updation is conflictiing"
+        print("The ", file_name , " is being accessed by some other client device! Updation is conflictiing")
         return 1    
 
 
@@ -402,7 +404,7 @@ def handle_request(client_socket, db_conn):
     
     while True:
         logging.debug("Listening Server: ")
-        msglist = client_socket.recv(BUFFER_SIZE)
+        msglist = client_socket.recv(BUFFER_SIZE).decode()
         if msglist == "":
             return
         for msg in msglist.split(pm.msgCode.endmark):
@@ -418,7 +420,7 @@ def server_sync(db_conn, client_id, client_socket):
 
     msg = pm.get_servsync_msg(client_id, '\0', db_conn)
     client_socket.send(msg)
-    print pm.bcolors.OKBLUE + "Sync-ing with server... Please wait... This may take a while..." + pm.bcolors.ENDC
+    print(pm.bcolors.OKBLUE + "Sync-ing with server... Please wait... This may take a while..." + pm.bcolors.ENDC)
     # now this becomes a server
     
     #logging.debug("Now lock : {}".format(pm.SharedPort.client_sync_port_used))
@@ -437,7 +439,7 @@ def server_sync(db_conn, client_id, client_socket):
     serv_sock, addr = client_sync_socket.accept()
     ret = 1
     while ret is 1:
-        msglist = serv_sock.recv(BUFFER_SIZE)
+        msglist = serv_sock.recv(BUFFER_SIZE).decode()
         if msglist == "":
             continue
         for msg in msglist.split(pm.msgCode.endmark):
@@ -459,7 +461,7 @@ def updation_on_change(db_conn, client_socket, client_id):
 
     global locked
 
-    print pm.bcolors.OKGREEN + "Notifier started..." + pm.bcolors.ENDC
+    print(pm.bcolors.OKGREEN + "Notifier started..." + pm.bcolors.ENDC)
     # add notifier to watch
     notifier = inotify.adapters.InotifyTree('.')
     src_file = None
@@ -485,12 +487,12 @@ def updation_on_change(db_conn, client_socket, client_id):
                 
                 locked[total_file_name] = 0
                 if (total_file_name in conflict and conflict[total_file_name] == 1) or (total_file_name in mvreq and mvreq[total_file_name] == 1):
-                    print pm.bcolors.FAIL + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC
+                    print(pm.bcolors.FAIL + "CONFLICT : Server copy of " + total_file_name + " has been modified!" + pm.bcolors.ENDC)
                     # remove local copy and download the latest server copy
-                    print pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC
+                    print(pm.bcolors.OKBLUE + "Server copy is being prioritized" + pm.bcolors.ENDC)
                     tempdelFiles.append(total_file_name)
                     os.remove(total_file_name)
-                    pm.delete_record(db_conn,total_file_name)
+                    delete_record(db_conn,total_file_name)
                     db_conn.commit()
                     msg = pm.get_resend_msg(client_id,total_file_name)
                     client_socket.send(msg)
@@ -503,7 +505,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                 if total_file_name in delreq and delreq[total_file_name] == 1:
                     tempdelFiles.append(total_file_name)
                     os.remove(total_file_name)
-                    pm.delete_record(db_conn,total_file_name)
+                    delete_record(db_conn,total_file_name)
                     db_conn.commit()
                     delreq[total_file_name] = 0
                     continue
@@ -515,7 +517,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                     continue
                 
                 logging.info("sending update to server %s", total_file_name)
-                pm.update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
+                update_db(db_conn,total_file_name,"client_m_time",os.path.getmtime(total_file_name))
                 db_conn.commit()
                 msg = pm.get_creq_msg(client_id,total_file_name,db_conn)
                 client_socket.send(msg)
@@ -532,7 +534,7 @@ def updation_on_change(db_conn, client_socket, client_id):
                     tempdelFiles.remove(total_file_name)
                     continue
 
-                pm.delete_record(db_conn,total_file_name)
+                delete_record(db_conn,total_file_name)
                 db_conn.commit()
                 logging.info("Deleting file %s", total_file_name)
                 msg = pm.get_delreq_msg(client_id,total_file_name,db_conn)
@@ -570,7 +572,7 @@ def _main():
     global SERVER_IP
 
     if len(sys.argv) != 5:
-        print USAGE_MESG
+        print(USAGE_MESG)
         exit(0)
 
     client_id = sys.argv[4]
@@ -578,22 +580,22 @@ def _main():
     SERVER_IP = sys.argv[2]
     SERVER_PORT = int(sys.argv[3])
     os.chdir(directory)
-    db_conn = pm.open_db()
-    pm.create_table(db_conn)
+    db_conn = open_db()
+    create_table(db_conn)
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_address = (SERVER_IP,SERVER_PORT)
-    print pm.bcolors.OKBLUE + "connecting to Pocket File Server {}".format(server_address) + pm.bcolors.ENDC
+    print(pm.bcolors.OKBLUE + "connecting to Pocket File Server {}".format(server_address) + pm.bcolors.ENDC)
     client_socket.connect(server_address)
 
-    print pm.bcolors.OKGREEN + "[+] Connected to Pocket File Server." + pm.bcolors.ENDC
+    print(pm.bcolors.OKGREEN + "[+] Connected to Pocket File Server." + pm.bcolors.ENDC)
 
     try:
         #sync serverfiles
         server_sync(db_conn, client_id, client_socket)
 
-        client_listener = thread.start_new_thread(handle_request, (client_socket,db_conn))
-        notifier_listener = thread.start_new_thread(updation_on_change(db_conn,client_socket,client_id))
+        client_listener = _thread.start_new_thread(handle_request, (client_socket,db_conn))
+        notifier_listener = _thread.start_new_thread(updation_on_change(db_conn,client_socket,client_id))
                     
         # client_listener.join()
         # notifier_listener.join()

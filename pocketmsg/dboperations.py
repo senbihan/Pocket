@@ -7,7 +7,7 @@ def open_db():
         If not present, creates a new one. '''
         
     conn = sq.connect("config.db", isolation_level=None, check_same_thread=False)
-    print "Database opened successfully!" 
+    print("Database opened successfully!") 
     return conn
 
 def create_table(conn):
@@ -20,7 +20,7 @@ def create_table(conn):
             CLIENT_M_TIME   REAL);''')
         conn.commit()
     except:
-        print "table already exists!"
+        print("table already exists!")
 
 
 def insert_db(conn, data):
@@ -30,7 +30,7 @@ def insert_db(conn, data):
     try:
         conn.execute("INSERT INTO trans VALUES(?,?,?)", data)
     except:
-        print "insertion failed"
+        print("insertion failed")
 
 def update_db(conn, fileid, key, val):
     '''update field by fileid '''
@@ -123,4 +123,4 @@ def get_data(conn, fileid, comm):
 def show_data(conn):
     cur = conn.execute("select * from trans;")
     for row in cur:
-        print row
+        print(row)

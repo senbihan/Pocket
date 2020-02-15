@@ -1,8 +1,9 @@
 import sys
 import socket
 from threading import Thread
-import thread
 import pocketmsg as pm
+import _thread
+from pocketmsg.dboperations import *
 import os
 import logging
 import time
@@ -55,12 +56,12 @@ def wait_net_service(s, server, port, timeout=None):
             
             s.connect((server, port))
         
-        except socket.timeout, err:
+        except socket.timeout:
             # this exception occurs only if timeout is set
             if timeout:
                 return False
       
-        except socket.error, err:
+        except socket.error:
             # catch timeout exception from underlying network library
             # this one is different from socket.timeout
             if type(err.args) != tuple or err[0] != errno.ETIMEDOUT:
@@ -107,7 +108,7 @@ def recieve_delta_and_patch(file_name):
     # Receive delta
     deldata = ""
     while True:
-        data = client_del_sock.recv(BUFFER_SIZE)
+        data = client_del_sock.recv(BUFFER_SIZE).decode()
         deldata += data
         if not data:
             break
@@ -145,7 +146,7 @@ def recieve_signature_and_send_delta(client_id, client, ip, file_name, db_conn):
     # Receive Signature
     sigdata = ""
     while True:
-        data = client_sig_sock.recv(BUFFER_SIZE)
+        data = client_sig_sock.recv(BUFFER_SIZE).decode()
         sigdata += data
         if not data:
             break
@@ -205,8 +206,8 @@ def service_message(msg, client, addr, db_conn, flag):
 
             c_server_m_time, c_client_m_time = data.split('<##>')
             
-            s_client_m_time = pm.get_data(db_conn,file_name,"client_m_time")
-            s_server_m_time = pm.get_data(db_conn,file_name,"server_m_time")
+            s_client_m_time = get_data(db_conn,file_name,"client_m_time")
+            s_server_m_time = get_data(db_conn,file_name,"server_m_time")
 
             #Case 1
             if s_server_m_time == c_server_m_time:
@@ -220,7 +221,7 @@ def service_message(msg, client, addr, db_conn, flag):
                         # present client has more updated data 
                         # SENDSIG Sig
                         logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
-                        pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
+                        update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                         db_conn.commit()
                         send_signature(client_id, addr[0], file_name, db_conn, client)
                         return 1
@@ -242,7 +243,7 @@ def service_message(msg, client, addr, db_conn, flag):
                 if c_client_m_time > s_client_m_time:
                     # SENDSIG Sig
                     logging.info("Requesting Update for file : %s from client: %s",file_name,client_id)
-                    pm.update_db(db_conn,file_name,"client_m_time",c_client_m_time)
+                    update_db(db_conn,file_name,"client_m_time",c_client_m_time)
                     db_conn.commit()
                     send_signature(client_id, addr[0], file_name, db_conn, client)
                     return 1
@@ -260,7 +261,7 @@ def service_message(msg, client, addr, db_conn, flag):
             # send a request to send the total file
             logging.info("Requesting File: %s",file_name)
             sm_time, cm_time = data.split('<##>')
-            pm.update_db(db_conn,file_name,"client_m_time",cm_time)
+            update_db(db_conn,file_name,"client_m_time",cm_time)
             db_conn.commit()
             ret_msg = pm.get_reqtot_msg(client_id,file_name,db_conn)
             #logging.info("returing msg for requesting data: %s",ret_msg)
@@ -343,7 +344,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
         with open(file_name, 'wb') as f:
             while True:
-                data = client_data_sock.recv(BUFFER_SIZE)
+                data = client_data_sock.recv(BUFFER_SIZE).decode()
                 if not data:
                     break
                 f.write(data)
@@ -353,7 +354,7 @@ def service_message(msg, client, addr, db_conn, flag):
         pm.SharedPort.server_port_used = False
 
         #update server_m_time
-        ret = pm.update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
+        ret = update_db(db_conn,file_name,"server_m_time",os.path.getmtime(file_name))
         db_conn.commit()
         #send server_m_time to client for update
         ret_msg = pm.get_sendsmt_msg(client_id,file_name,db_conn)
@@ -378,7 +379,7 @@ def service_message(msg, client, addr, db_conn, flag):
 
     if msg_code == pm.msgCode.SENDCMT:
         #logging.info("updating cmt")
-        pm.update_db(db_conn,file_name,"client_m_time",data)
+        update_db(db_conn,file_name,"client_m_time",data)
         db_conn.commit()
 
         if flag:
@@ -406,7 +407,7 @@ def service_message(msg, client, addr, db_conn, flag):
                 shutil.rmtree(file_name)
             else:
                 os.remove(file_name)
-                pm.delete_record(db_conn,file_name)
+                delete_record(db_conn,file_name)
                 db_conn.commit()
             
             logging.info("Updating to other clients...")
@@ -416,7 +417,7 @@ def service_message(msg, client, addr, db_conn, flag):
                     acclients.send(msg)
         
         else:
-            print pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC
+            print(pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC)
         return 1
 
     if msg_code == pm.msgCode.MVREQ:
@@ -427,7 +428,7 @@ def service_message(msg, client, addr, db_conn, flag):
             os.rename(data,file_name)
             
             if os.path.isdir(file_name) is False:
-                pm.update_db_filename(db_conn,data,file_name)
+                update_db_filename(db_conn,data,file_name)
                 db_conn.commit()
 
             logging.info("Updating to other clients...")
@@ -436,7 +437,7 @@ def service_message(msg, client, addr, db_conn, flag):
                     msg = pm.get_mvreq_msg(client_dict[acclients],file_name,data,db_conn)
                     acclients.send(msg)
         else:
-            print pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC
+            print(pm.bcolors.WARNING + file_name + " doesnot exist " + pm.bcolors.ENDC)
         
         return 1
 
@@ -486,10 +487,11 @@ def handle_request(client, addr, db_conn, flag = False):
     ret = 1
     global active_clients
     while ret == 1:
-        msgList = client.recv(BUFFER_SIZE)
+        msgList = client.recv(BUFFER_SIZE).decode()
         if msgList == "":
             continue
-        #logging.debug("msglist : %s",msgList)
+        logging.debug("msglist : %s",msgList)
+        #print(type(msgList), msgList)
         for msg in msgList.split(pm.msgCode.endmark):
             if msg == "":
                 continue            
@@ -507,15 +509,15 @@ def _main():
     global active_clients, logo
     # create a server socket
     if len(sys.argv) != 2:
-        print pm.bcolors.FAIL + "usage: python server.py [dirname]" + pm.bcolors.ENDC
+        print(pm.bcolors.FAIL + "usage: python server.py [dirname]" + pm.bcolors.ENDC)
     os.chdir(sys.argv[1])
     server = socket.socket()
     addr = ('', 0)
     server.bind(addr)
-    print logo
-    print pm.bcolors.OKGREEN + "Pocket Server Started at : {}".format(server.getsockname()) + pm.bcolors.ENDC
-    db_conn = pm.open_db()
-    pm.create_table(db_conn)
+    print(logo)
+    print(pm.bcolors.OKGREEN + "Pocket Server Started at : {}".format(server.getsockname()) + pm.bcolors.ENDC)
+    db_conn = open_db()
+    create_table(db_conn)
     server.listen(20)
 
     # CLIENT SYNC (both for Online and Newly connected Client)
@@ -525,8 +527,8 @@ def _main():
         client, addr = server.accept()
         if client not in active_clients:
             active_clients.append(client)
-        print pm.bcolors.OKGREEN + "[+] getting connection from " + str(addr) + pm.bcolors.ENDC
-        thread.start_new_thread(handle_request,(client,addr,db_conn, False))
+        print(pm.bcolors.OKGREEN + "[+] getting connection from " + str(addr) + pm.bcolors.ENDC)
+        _thread.start_new_thread(handle_request,(client,addr,db_conn, False))
     
     server.close()
 

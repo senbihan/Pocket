@@ -1,0 +1,5 @@
+# ignore everything in test directory
+/test/*
+/dist/*
+*.egg-*
+/*/__pycache__/*
